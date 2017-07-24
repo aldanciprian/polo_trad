@@ -22,7 +22,6 @@ my $sign = $ENV{'POLONIEX_SIGN'};
 my $decoded_json;
 my $hashref_temp = 0;
 
-
 my $has_pending_order = 0; # bit to see if there is a pending order ot not
 my $crt_order_number = 0; # in case there is a pending order, this should express the order number
 my $crt_pair = 0; # the current pair in the order
@@ -39,6 +38,7 @@ my $filename_samplings_h;
 
 my $sleep_interval = 10; # sleep interval in seconds , the default
 my $step_wait_execute = 10; # number of seconds to wait until verify if the order is executed
+my $step_sampling = 60; # number of seconds between samples when deciding to buy
 
 # BUYING 1
 # BOUGHT 2
@@ -54,9 +54,22 @@ sub get_state_machine;
 sub get_pair_list;
 sub get_next_buy_ticker;
 
+sub get_tstmp;
+sub get_percentChange;
+sub get_low24hr;
+sub get_last;
+sub get_high24hr;
+sub get_lowestAsk; 
+sub get_quoteVolume;
+sub get_baseVolume;
+sub get_id; 
+sub get_highestBid;
+sub get_isFrozen;
+
 while (1)
 {
 	# get the state machine
+	my $crt = timestamp();
 	my $state = get_state_machine();
 	
 	#switch for each state
@@ -71,29 +84,31 @@ while (1)
 					else
 					{
 						# there is no worder
-						get_next_buy_ticker();
+						my $buy_ticker = get_next_buy_ticker();
+						if ( $buy_ticker ne "0" )
+						{
+							#buy now
+							#write status file - last line
+							my $price = get_last($queue_pairs_lists[ $queue_pairs_lists_size - 1]->{$buy_ticker}) - 0.00000010;
+							# open(my $filename_status_h, '>>', $filename_status) or warn "Could not open file '$filename_status' $!";
+							# print $filename_status_h "1 $tstmp BUYING BTC_$buy_ticker $price ";
+							# close $filename_status_h;
+						}
+						else
+						{
+						$sleep_interval = $step_sampling;
+						}
 					}
-					#check if order is pending
-						# if not
-							# get wining ticker
-							# buy
-						# if yes
-							# wait
-					# my @list = get_pair_list();
-					# foreach (@list)
-					# {
-						# print "1. $_ \n";
-					# }
-				 }
+			}
 	case 2 { 
 					print "BOUGHT \n"; 
-				 }	
+		    }	
 	case 3 { 
 					print "SELLING \n"; 
-				 }
+			}
 	case 4 { 
 					print "SOLD \n"; 
-				 }	
+			}	
 	else { print "State is not recognised ! \n"; } 
 	}
 	sleep $sleep_interval;
@@ -108,12 +123,12 @@ while (1)
 
 # get_json_post();
 my $polo_wrapper = Poloniex->new($apikey,$sign);
-my $balances = $polo_wrapper->get_balances();
-foreach (sort (keys($balances)))
-{
+# my $balances = $polo_wrapper->get_balances();
+# foreach (sort (keys($balances)))
+# {
 	
-	print "test $_ $balances->{$_} \n";
-}
+	# print "test $_ $balances->{$_} \n";
+# }
 # print Dumper $polo_wrapper->get_balances();
 print Dumper $polo_wrapper->get_my_trade_history("all");
 print Dumper $polo_wrapper->get_open_orders("all");
@@ -158,7 +173,7 @@ sub timestamp {
 }
 
 sub get_state_machine {
-my $previous_state = 0;
+	my $previous_state = 0;
 	#read status file - last line
 	open(my $filename_status_h, '<', $filename_status) or warn "Could not open file '$filename_status' $!";
 	my $last_line;
@@ -204,7 +219,7 @@ my $previous_state = 0;
 }
 
 sub get_pair_list {
-	my @current_list;
+	my %current_list;
 	my $tstmp = timestamp();
 	# $decoded_json=get_json("https://api.nicehash.com/api?method=orders.set.price&id=$apiid&key=$apikey&location=0&algo=$algo&order=$local_specific_order->{'id'}&price=$increase_price");
 	$decoded_json=get_json("https://poloniex.com/public?command=returnTicker");
@@ -224,7 +239,6 @@ sub get_pair_list {
 		
 		if ( $_ =~ /BTC_(.*)/ )
 		{
-			my @elem;
 			# only trade against BTC
 			my $coinName = $1;
 			
@@ -274,19 +288,82 @@ sub get_pair_list {
 				# push @elem $id;
 				# push @elem $highestBid;
 				# push @elem $isFrozen;
-				push @current_list, "$tstmp $coinName $percentChange $low24hr $last $high24hr $lowestAsk $quoteVolume $baseVolume $id $highestBid $isFrozen";	
+				$current_list{$coinName} = "$tstmp $percentChange $low24hr $last $high24hr $lowestAsk $quoteVolume $baseVolume $id $highestBid $isFrozen";
+				# push @current_list, %elem_hash;	
 			}
 		}
 	}
 				
 				# push @current_list, @elem;	
-	return @current_list;
+	return %current_list;
 }
 
 
 sub get_next_buy_ticker
 {
+	my $highest_negative_delta = 0;
+	my $decline_ticker = "";
 	populate_queue();
+	if ( $#queue_pairs_lists < ($queue_pairs_lists_size - 1) )
+	{
+		print "we don't have a full sample list yet !\n";
+		return "0";
+	}
+	
+	# print Dumper @queue_pairs_lists;
+	foreach (sort (keys ($queue_pairs_lists[$queue_pairs_lists_size - 1 ])))
+	{
+		my $ticker = $_;
+		
+		my $first_tstmp = get_tstmp($queue_pairs_lists[ 0 ]->{$ticker});
+		my $last_tstmp = get_tstmp($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$ticker});
+		# print "first $first_tstmp last $last_tstmp \n";		
+		my $firstTime = Time::Piece->strptime($first_tstmp,'%Y-%m-%d_%H-%M-%S');
+		my $lastTime = Time::Piece->strptime($last_tstmp,'%Y-%m-%d_%H-%M-%S');
+		
+		if ( ($lastTime - $firstTime) > (($step_sampling  * $queue_pairs_lists_size ) + 20) )
+		{
+			print "the time distance between the first and last sample is to high ".($lastTime - $firstTime)." \n";
+			return "0";
+		}
+		
+		my $first = get_last($queue_pairs_lists[ 0 ]->{$ticker});
+		my $last  = get_last($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$ticker});
+		# print "$ticker ";
+		if  ( $first >= $last  )
+		{
+			my $delta = $first - $last;
+			my $procent = (100 * $delta) / $first;
+			if ( $highest_negative_delta < $procent )
+			{
+				$highest_negative_delta  = $procent;
+				$decline_ticker = $ticker;
+			}
+			# print "DOWN  $procent  $first $last";
+		}
+		else
+		{
+			my $delta = $last - $first;
+			my $procent = (100 * $delta) / $first;
+			# print "UP $procent $first $last";
+		}
+		# for (my $i = 0; $i < $queue_pairs_lists_size ; $i++)
+		# {	
+			# print get_last(@queue_pairs_lists[ $i ]->{$ticker})." ";
+		# }
+		# print "\n";
+		# print "tstmp 0  and 1 is for $_  ".get_tstmp(@queue_pairs_lists[ 0 ]->{$_})."  ".get_tstmp(@queue_pairs_lists[ 1 ]->{$_})."  ".get_tstmp(@queue_pairs_lists[ 2 ]->{$_})."  ".get_tstmp(@queue_pairs_lists[ 3 ]->{$_})." \n";
+	}
+	print "the most declining ticker is $decline_ticker $highest_negative_delta ".get_last($queue_pairs_lists[ 0 ]->{$decline_ticker})." ".get_last($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$decline_ticker})." \n";
+	return $decline_ticker;
+	# foreach (@queue_pairs_lists)
+	# {
+		# my $hash = $_;
+		# foreach (sort (keys (%{$hash})))
+		# {
+			# print "$_ $hash->{$_} \n";
+		# }
+	# }
 	
 }
 
@@ -299,22 +376,22 @@ sub populate_queue
 	}
 
 	# read the sampling files and loadit in RAM
-	my @crt_chunk;
+	my %tmp_hash_chunk;	
 	my $start_chunk = 0;
 	open $filename_samplings_h, $filename_samplings or warn "Could not open $filename_samplings: $!";
 
 	while( my $line = <$filename_samplings_h>)  {   
 		chomp($line);
-		# print "line $line \n";
+		
 		if ( $start_chunk == 1 )
 		{
 			if ( $line =~ /.*STOP.*/ )
 			{
 				#stop
 				$start_chunk = 0;
-				my @tmp_crt_chunk;
-				@tmp_crt_chunk	= @crt_chunk;
-				push @queue_pairs_lists , \@tmp_crt_chunk;
+				# print Dumper %tmp_hash_chunk;
+				my %chunk_hash = %tmp_hash_chunk;
+				push @queue_pairs_lists , \%chunk_hash;
 				# print Dumper @queue_pairs_lists;
 
 				if ( ($#queue_pairs_lists + 1) > $queue_pairs_lists_size )
@@ -323,20 +400,19 @@ sub populate_queue
 					# remove the oldest element
 					shift @queue_pairs_lists;
 				}
-
-				@crt_chunk = ();
-				# clean crt_chunk 
-				foreach (@crt_chunk)
-				{
-					shift @crt_chunk;
-				}
+				#clear the hash
+				delete $tmp_hash_chunk{$_} for keys %tmp_hash_chunk;
 			}
 			else
 			{
 				# every line here is good
 				# print "add to chunk \n";
 				# print "$line \n";
-				push @crt_chunk , $line;
+				if ( $line =~ /(\S*?)\s+?(.*)$/ )
+				{
+					# print "[$1] [$2] \n";
+					$tmp_hash_chunk{$1} = $2;
+				}
 			}
 		}
 		if ( $line =~ /.*START.*/ )
@@ -351,9 +427,9 @@ sub populate_queue
 	# print Dumper @queue_pairs_lists;
 	
 	# push the new sampling
-	my @current_list = 	get_pair_list();
+	my %current_list = 	get_pair_list();
 
-	push @queue_pairs_lists, \@current_list;	
+	push @queue_pairs_lists, \%current_list;	
 	if ( ($#queue_pairs_lists + 1) > $queue_pairs_lists_size )
 	{
 		# the queue is full
@@ -372,15 +448,105 @@ sub populate_queue
 		# print $filename_samplings_h "START \n";	
 		# print $filename_samplings_h "$_ \n";
 		# print $filename_samplings_h "STOP \n";
-		my $chunk = \@$_;
+		my $chunk = $_;
 		print $filename_samplings_h "START \n";
-		foreach (@{$chunk})
+		foreach (sort (keys(%{$chunk})) )
 		{
-			print $filename_samplings_h "$_\n";						
+			print $filename_samplings_h "$_ $chunk->{$_} \n";						
 		}
 		print $filename_samplings_h "STOP \n";
 	}
 
 	close $filename_samplings_h;
-	print Dumper @queue_pairs_lists;
+}
+
+
+sub get_tstmp
+{
+	my $param = shift;
+	if ( $param =~ /(\S*?)\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?.*/ )
+	{
+		return $1;
+	}
+}
+
+sub get_percentChange
+{
+	my $param = shift;
+	if ( $param =~ /\S*?\s+(\S*?)\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?.*/ )
+	{
+		return $1;
+	}
+}
+sub get_low24hr
+{
+	my $param = shift;
+	if ( $param =~ /\S*?\s+\S*?\s+(\S*?)\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?.*/ )
+	{
+		return $1;
+	}
+}
+sub get_last
+{
+	my $param = shift;
+	if ( $param =~ /\S*?\s+\S*?\s+\S*?\s+(\S*?)\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?.*/ )
+	{
+		return $1;
+	}
+}
+sub get_high24hr
+{
+	my $param = shift;
+	if ( $param =~ /\S*?\s+\S*?\s+\S*?\s+\S*?\s+(\S*?)\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?.*/ )
+	{
+		return $1;
+	}
+}
+sub get_lowestAsk
+{
+	my $param = shift;
+	if ( $param =~ /\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+(\S*?)\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?.*/ )
+	{
+		return $1;
+	}
+}
+sub get_quoteVolume
+{
+	my $param = shift;
+	if ( $param =~ /\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+(\S*?)\s+\S*?\s+\S*?\s+\S*?\s+\S*?.*/ )
+	{
+		return $1;
+	}
+}
+sub get_baseVolume
+{
+	my $param = shift;
+	if ( $param =~ /\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+(\S*?)\s+\S*?\s+\S*?\s+\S*?.*/ )
+	{
+		return $1;
+	}
+}
+sub get_id
+{
+	my $param = shift;
+	if ( $param =~ /\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+(\S*?)\s+\S*?\s+\S*?.*/ )
+	{
+		return $1;
+	}
+}
+sub get_highestBid
+{
+	my $param = shift;
+	if ( $param =~ /\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+(\S*?)\s+\S*?.*/ )
+	{
+		return $1;
+	}
+}
+sub get_isFrozen
+{
+	my $param = shift;
+	if ( $param =~ /\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+\S*?\s+(\S*?).*/ )
+	{
+		return $1;
+	}
 }
