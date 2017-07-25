@@ -35,10 +35,10 @@ my $queue_pairs_lists_size = 4; # size of the list with all samplings
 # my $wining_procent = 1.5; # the procent where we sell
 my $wining_procent = 0.015; # the procent where we sell
 
-my $filename_status= "poloniex_status.ctrl";
+my $filename_status= "poloniex_status_up.ctrl";
 my $filename_status_h;
 
-my $filename_samplings= "poloniex_samplings.ctrl";
+my $filename_samplings= "poloniex_samplings_up.ctrl";
 my $filename_samplings_h;
 
 my $sleep_interval = 10; # sleep interval in seconds , the default
@@ -50,6 +50,9 @@ my $step_sampling = 60; # number of seconds between samples when deciding to buy
 my $loosingProcent = 20; #the loss limit
 my $volumeRef = 70; # only pairs with more then x coin volume
 
+
+my $procent_min = 0.5;
+my $procent_max = 1.5;
 # BUYING 1
 # BOUGHT 2
 # SELLING 3
@@ -120,17 +123,20 @@ while (1)
 							print "Order is completed ! \n";
 							
 							$decoded_json = $polo_wrapper->get_my_trade_history($crt_pair);
+							print Dumper $decoded_json;
 							my $total_btc = 0;
 							my $buy_ammount = 0;
+							my $buy_fee = 0;
 							foreach (@{$decoded_json})
 							{
 								if ( $crt_order_number == $_->{'orderNumber'} )
 								{
 									$total_btc += $_->{'total'};
 									$buy_ammount += $_->{'amount'};
+									$buy_fee += $_->{'fee'};
 								}
 							}
-							$buy_ammount = $buy_ammount - ( $buy_ammount * 0.0015 );
+							$buy_ammount = $buy_ammount - $buy_fee;
 							$sleep_interval = $step_wait_execute;
 							print "$current_spike $crt_tstmp BOUGHT $crt_pair ".sprintf("%0.8f",$crt_price)." $buy_ammount $crt_order_number $total_btc \n";						
 							open(my $filename_status_h, '>>', $filename_status) or warn "Could not open file '$filename_status' $!";
@@ -175,6 +181,7 @@ while (1)
 							open(my $filename_status_h, '>>', $filename_status) or warn "Could not open file '$filename_status' $!";
 							print $filename_status_h  "$current_spike $execute_crt_tstmp BUYING BTC_$buy_ticker ".sprintf("%0.8f",$price)." $buy_ammount $crt_order_number $btc_balance \n";
 							close $filename_status_h;
+							$sleep_interval = $step_wait_selling;
 						}
 						else
 						{
@@ -254,7 +261,9 @@ while (1)
 					my $sell_ticker = $crt_pair;
 					$sell_ticker =~ s/BTC_(.*)/$1/g ;
 					my %current_list = 	get_pair_list();
-					print Dumper $current_list{$sell_ticker};
+					# print Dumper $current_list{$sell_ticker};
+					my $ticker_status = $current_list{$sell_ticker};
+					$ticker_status =~ s/\S*?\s+\S*?\s+\S*?\s+(\S*?)\s+.*/$1/g;
 					
 					$decoded_json = $polo_wrapper->get_open_orders("all");
 
@@ -265,15 +274,18 @@ while (1)
 						$decoded_json = $polo_wrapper->get_my_trade_history($crt_pair);
 						my $total_btc = 0;
 						my $sell_ammount = 0;
+						my $sell_fee = 0;
 						foreach (@{$decoded_json})
 						{
 							if ( $crt_order_number == $_->{'orderNumber'} )
 							{
 								$total_btc += $_->{'total'};
 								$sell_ammount += $_->{'amount'};
+								$sell_fee += $_->{'fee'};
 							}
 						}						
 						
+						$total_btc -= $sell_fee;
 						$sleep_interval = $step_wait_execute;
 						print "$current_spike $crt_tstmp SOLD $crt_pair ".sprintf("%0.15f",$crt_price)." $sell_ammount $crt_order_number $total_btc \n";						
 						open(my $filename_status_h, '>>', $filename_status) or warn "Could not open file '$filename_status' $!";
@@ -282,7 +294,20 @@ while (1)
 					}
 					else
 					{
-						print "Order is not completed ! \n";	
+						my $delta_procent = 0;
+						# my $bought_price = $crt_price - (
+						if  ( $crt_price > $ticker_status )
+						{
+						$delta_procent = $crt_price - $ticker_status;
+						$delta_procent = ( $delta_procent * 100 ) / $crt_price; 
+						$delta_procent = $delta_procent * (-1) ;						
+						}
+						else
+						{
+						$delta_procent = $ticker_status - $crt_price;
+						$delta_procent = ( $delta_procent * 100 ) / $crt_price; 
+						}
+						print "Order is not completed ! delta is $delta_procent %  $crt_price  $ticker_status \n";	
 						$sleep_interval = $step_wait_sell_execute;							
 					}					
 			}
@@ -493,8 +518,8 @@ sub get_pair_list {
 
 sub get_next_buy_ticker
 {
-	my $highest_negative_delta = 0;
-	my $decline_ticker = "";
+	my $lowest_positive_delta = 100;
+	my $incline_ticker = "0";
 	populate_queue();
 	if ( $#queue_pairs_lists < ($queue_pairs_lists_size - 1) )
 	{
@@ -526,18 +551,22 @@ sub get_next_buy_ticker
 		{
 			my $delta = $first - $last;
 			my $procent = (100 * $delta) / $first;
-			if ( $highest_negative_delta < $procent )
-			{
-				$highest_negative_delta  = $procent;
-				$decline_ticker = $ticker;
-			}
-			# print "DOWN  $procent  $first $last";
+			# print "DOWN  $procent  $first $last \n";
 		}
 		else
 		{
 			my $delta = $last - $first;
 			my $procent = (100 * $delta) / $first;
-			# print "UP $procent $first $last";
+			if ( ($procent > $procent_min ) and ( $procent <= $procent_max ) )
+			{
+				if ( $lowest_positive_delta > $procent )
+				{
+					$lowest_positive_delta  = $procent;
+					$incline_ticker = $ticker;
+					# print "UP $incline_ticker $procent $first $last \n";				
+				}
+			}
+			# print "UP $procent $first $last \n";
 		}
 		# for (my $i = 0; $i < $queue_pairs_lists_size ; $i++)
 		# {	
@@ -546,8 +575,9 @@ sub get_next_buy_ticker
 		# print "\n";
 		# print "tstmp 0  and 1 is for $_  ".get_tstmp(@queue_pairs_lists[ 0 ]->{$_})."  ".get_tstmp(@queue_pairs_lists[ 1 ]->{$_})."  ".get_tstmp(@queue_pairs_lists[ 2 ]->{$_})."  ".get_tstmp(@queue_pairs_lists[ 3 ]->{$_})." \n";
 	}
-	print "the most declining ticker is $decline_ticker $highest_negative_delta ".get_last($queue_pairs_lists[ 0 ]->{$decline_ticker})." ".get_last($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$decline_ticker})." ".get_tstmp($queue_pairs_lists[ 0 ]->{$decline_ticker})." ".get_tstmp($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$decline_ticker})."\n";
-	return $decline_ticker;
+
+	print "the smallest positive incline_ticker ticker is $incline_ticker $lowest_positive_delta ".get_last($queue_pairs_lists[ 0 ]->{$incline_ticker})." ".get_last($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$incline_ticker})." ".get_tstmp($queue_pairs_lists[ 0 ]->{$incline_ticker})." ".get_tstmp($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$incline_ticker})."\n";
+	return $incline_ticker;
 	# foreach (@queue_pairs_lists)
 	# {
 		# my $hash = $_;

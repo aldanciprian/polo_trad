@@ -2,7 +2,7 @@
 
 while [ 1 ]
 do
-	PID_OUT=`ps -ef | grep poloniex_trade.pl | grep -v grep`
+	PID_OUT=`ps -ef | grep poloniex_trade_up.pl | grep -v grep`
 	# echo ${PID_OUT}
 	if [ $? -eq 0 ]
 	then
@@ -10,7 +10,7 @@ do
 		PID=`echo ${PID_OUT} | awk '{print $2}'`
 		echo "balance pid is ${PID}"
 	else
-		./poloniex_trade.pl
+		./poloniex_trade_up.pl
 		
 	fi
 	sleep 5s

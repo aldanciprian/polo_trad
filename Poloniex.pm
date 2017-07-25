@@ -154,7 +154,7 @@ sub get_my_trade_history() {
 
 
 sub buy() {
- print "In buy \n";
+ # print "In buy \n";
  my $self = shift; my $pair = shift; my $rate = shift; my $amount = shift;
  return $self->query(
   {
