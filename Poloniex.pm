@@ -7,8 +7,8 @@ use LWP::UserAgent;
 use JSON::XS;
 use WWW::Curl::Easy;
 use Test::JSON;
-use Scalar::Util 'blessed';
 use Data::Dumper;               # Perl core module
+use Scalar::Util 'blessed';
 
 sub new {
  my $class = shift;
@@ -31,11 +31,10 @@ sub query {
  my $secret = $self->{api_secret};
 
  # Generate a nonce to avoid problems with 32bit systems
- my $nonce = time() =~ s/\.//r;
- $req{'nonce'} = $nonce * 10;
- 
+ $req{'nonce'} = time() =~ s/\.//r;
  my $data = \%req;
 
+ # $req{'nonce'} += 6000000000;
  # Generate the POST data string
  my $post_data = http_build_query($data, '', '&');
  my $sign = hmac_sha512_hex($post_data, $secret);
@@ -60,6 +59,15 @@ sub query {
   # judge result and next action based on $response_code
   my $response_code = $curl->getinfo(CURLINFO_HTTP_CODE);
   if ($dec = JSON::XS::decode_json($response_body)) {
+	  # print "in query \n";
+		# print Dumper $dec;
+		if (ref($dec) eq "HASH")
+		{
+			if ( exists($dec->{'error'} ) )
+			{
+				die "A logical error happened: $dec->{'error'}\n";
+			}
+		}
    if (ref($dec) eq "HASH") { return \%{  $dec  }; } else { return  \@{  $dec  }; }
   } else { return false; }
  }
@@ -116,7 +124,7 @@ sub get_trading_pairs() {
 
 sub get_balances() {
  $self = shift;
- return  $self->query(
+ return $self->query(
   {
    command => 'returnBalances'
   }
@@ -136,17 +144,17 @@ sub get_open_orders() { # Returns array of open order hashes
 
 sub get_my_trade_history() {
  $self = shift; $pair = shift;
- print "my trade history $pair\n";
  return $self->query(
   {
    'command' => 'returnTradeHistory',
-   'currencyPair' => $pair
+   'currencyPair' => uc($pair)
   }
  );
 }
 
 
 sub buy() {
+ print "In buy \n";
  my $self = shift; my $pair = shift; my $rate = shift; my $amount = shift;
  return $self->query(
   {
@@ -201,7 +209,6 @@ sub public_url {
  }
  return $self->{public_url};
 }
-
 
 
 1;

@@ -22,6 +22,7 @@ sub new {
 }
 
 sub query {
+print "in query \n";
  my $self = shift;
  my %req = %{$_[0]};
 
@@ -57,6 +58,11 @@ sub query {
   # judge result and next action based on $response_code
   my $response_code = $curl->getinfo(CURLINFO_HTTP_CODE);
   if ($dec = JSON::XS::decode_json($response_body)) {
+		print "referinta is ".ref($dec)." \n";
+	 if (exists $dec{'error'})
+	 {
+		die "An error happened: $dec{'error'}\n";
+	 }
    if (ref($dec) eq "HASH") { return %{  $dec  }; } else { return  @{  $dec  }; }
   } else { return false; }
  }
@@ -112,6 +118,7 @@ sub get_trading_pairs() {
 
 
 sub get_balances() {
+ print " in get balances \n";
  $self = shift;
  return $self->query(
   {
@@ -143,6 +150,8 @@ sub get_my_trade_history() {
 
 
 sub buy() {
+print "in buy \n";
+exit 0;
  my $self = shift; my $pair = shift; my $rate = shift; my $amount = shift;
  return $self->query(
   {
