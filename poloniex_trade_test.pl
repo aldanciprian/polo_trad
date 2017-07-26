@@ -35,10 +35,10 @@ my $queue_pairs_lists_size = 5; # size of the list with all samplings
 # my $wining_procent = 1.5; # the procent where we sell
 my $wining_procent = 0.015; # the procent where we sell
 
-my $filename_status= "poloniex_status.ctrl";
+my $filename_status= "poloniex_status_test.ctrl";
 my $filename_status_h;
 
-my $filename_samplings= "poloniex_samplings.ctrl";
+my $filename_samplings= "poloniex_samplings_test.ctrl";
 my $filename_samplings_h;
 
 my $sleep_interval = 10; # sleep interval in seconds , the default
@@ -113,45 +113,45 @@ while (1)
 					{
 						print "Order $crt_order_number is pending.Wait for finalization.\n";
 						# print Dumper $polo_wrapper->get_open_orders("all");						
-						$decoded_json = $polo_wrapper->get_open_orders("all");
+						# $decoded_json = $polo_wrapper->get_open_orders("all");
 						# print "ref is ".ref($decoded_json)." \n";
 						# print Dumper $decoded_json;
-						foreach (@{$decoded_json->{$crt_pair}})
-						{
-							if ( $_->{'orderNumber'} == $crt_order_number )
-							{
-									#we found the order in the pending list
-									#order is not complete;
-									$order_is_not_complete = 1;
-							}
-						}
-						if ( $order_is_not_complete == 0 )
+						# foreach (@{$decoded_json->{$crt_pair}})
+						# {
+							# if ( $_->{'orderNumber'} == $crt_order_number )
+							# {
+									# we found the order in the pending list
+									# order is not complete;
+									# $order_is_not_complete = 1;
+							# }
+						# }
+						# if ( $order_is_not_complete == 0 )
 						{
 							print "Order is completed ! \n";
 							
 							$decoded_json = $polo_wrapper->get_my_trade_history($crt_pair);
 							print Dumper $decoded_json;
-							my $total_btc = 0;
-							my $buy_ammount = 0;
-							foreach (@{$decoded_json})
-							{
-								if ( $crt_order_number == $_->{'orderNumber'} )
-								{
-									my $applied_fee = $_->{'amount'} - ( $_->{'amount'} * $_->{'fee'});
-									$total_btc += $_->{'total'};
-									$buy_ammount += $applied_fee;
-								}
-							}
+							my $total_btc = $btc_balance;
+							my $buy_ammount = $crt_ammount;
+							# foreach (@{$decoded_json})
+							# {
+								# if ( $crt_order_number == $_->{'orderNumber'} )
+								# {
+									# my $applied_fee = $_->{'amount'} - ( $_->{'amount'} * $_->{'fee'});
+									# $total_btc += $_->{'total'};
+									# $buy_ammount += $applied_fee;
+								# }
+							# }
 							$sleep_interval = $step_wait_execute;
 							print "$current_spike $crt_tstmp BOUGHT $crt_pair ".sprintf("%0.8f",$crt_price)." ".sprintf("%0.8f",$buy_ammount)." $crt_order_number ".sprintf("%0.8f",$total_btc)." \n";						
 							open(my $filename_status_h, '>>', $filename_status) or warn "Could not open file '$filename_status' $!";
 							print $filename_status_h "$current_spike $crt_tstmp BOUGHT $crt_pair ".sprintf("%0.8f",$crt_price)." ".sprintf("%0.8f",$buy_ammount)." $crt_order_number ".sprintf("%0.8f",$total_btc)." \n";												
 							close $filename_status_h;									
 						}
-						else
-						{
-							print "Order is not completed ! \n";						
-						}
+						# else
+						# {
+							# print "Order is not completed ! \n";						
+						# }
 					}
 					else
 					{
@@ -178,12 +178,12 @@ while (1)
 							# $buy_ammount = $buy_ammount - ($buy_ammount * 0.0015);
 							$current_spike++;
 
-							$decoded_json = $polo_wrapper->buy("BTC_$buy_ticker",$price,$buy_ammount);
+							# $decoded_json = $polo_wrapper->buy("BTC_$buy_ticker",$price,$buy_ammount);
 							# $buy_ammount = $buy_ammount - ($buy_ammount * 0.0015);
 							 # print Dumper $polo_wrapper->buy("BTC_$buy_ticker",$price,$buy_ammount);
 							# print "Buying \n";
 							# print Dumper $decoded_json;
-							$crt_order_number = $decoded_json->{'orderNumber'};
+							# $crt_order_number = $decoded_json->{'orderNumber'};
 							print "$current_spike $execute_crt_tstmp BUYING BTC_$buy_ticker ".sprintf("%0.8f",$price)." $buy_ammount $crt_order_number $btc_balance \n";
 							open(my $filename_status_h, '>>', $filename_status) or warn "Could not open file '$filename_status' $!";
 							print $filename_status_h  "$current_spike $execute_crt_tstmp BUYING BTC_$buy_ticker ".sprintf("%0.8f",$price)." $buy_ammount $crt_order_number $btc_balance \n";
@@ -253,8 +253,8 @@ while (1)
 					#make a price higher with 1.5 %
 					#sell with that price and wait for the execution
 					my $latest_price = $crt_price + ( $crt_price * $wining_procent);
-					$decoded_json = $polo_wrapper->sell("BTC_$sell_ticker",$latest_price,$crt_ammount);
-					$crt_order_number = $decoded_json->{'orderNumber'};
+					# $decoded_json = $polo_wrapper->sell("BTC_$sell_ticker",$latest_price,$crt_ammount);
+					# $crt_order_number = $decoded_json->{'orderNumber'};
 					# print Dumper $decoded_json;
 					my $btc_after_sell = $latest_price * $crt_ammount;
 					$btc_after_sell = $btc_after_sell - ( $btc_after_sell * 0.0015 );
@@ -274,60 +274,60 @@ while (1)
 					my $ticker_status = $current_list{$sell_ticker};
 					$ticker_status =~ s/\S*?\s+\S*?\s+\S*?\s+(\S*?)\s+.*/$1/g;
 					
-					$decoded_json = $polo_wrapper->get_open_orders("all");
+					# $decoded_json = $polo_wrapper->get_open_orders("all");
 					# print "ref is ".ref($decoded_json)." \n";
 					# print Dumper $decoded_json;
-					foreach (@{$decoded_json->{$crt_pair}})
-					{
-						if ( $_->{'orderNumber'} == $crt_order_number )
-						{
-								#we found the order in the pending list
-								#order is not complete;
-								$order_is_not_complete = 1;
-						}
-					}					
+					# foreach (@{$decoded_json->{$crt_pair}})
+					# {
+						# if ( $_->{'orderNumber'} == $crt_order_number )
+						# {
+								# we found the order in the pending list
+								# order is not complete;
+								# $order_is_not_complete = 1;
+						# }
+					# }					
 					
-					if ( $order_is_not_complete == 0 )
+					# if ( $order_is_not_complete == 0 )
 					{
 						print "Order is completed ! \n";
 						
 						$decoded_json = $polo_wrapper->get_my_trade_history($crt_pair);
 						print Dumper $decoded_json;
-						my $total_btc = 0;
-						my $sell_ammount = 0;
-						foreach (@{$decoded_json})
-						{
-							if ( $crt_order_number == $_->{'orderNumber'} )
-							{
-								my $applied_fee = $_->{'total'} - ( $_->{'total'} * $_->{'fee'} );
-								$total_btc += $applied_fee;
-								$sell_ammount += $_->{'amount'};
-							}
-						}						
+						my $total_btc = $btc_balance;
+						my $sell_ammount = $crt_ammount;
+						# foreach (@{$decoded_json})
+						# {
+							# if ( $crt_order_number == $_->{'orderNumber'} )
+							# {
+								# my $applied_fee = $_->{'total'} - ( $_->{'total'} * $_->{'fee'} );
+								# $total_btc += $applied_fee;
+								# $sell_ammount += $_->{'amount'};
+							# }
+						# }						
 						$sleep_interval = $step_wait_execute;
 						print "$current_spike $crt_tstmp SOLD $crt_pair ".sprintf("%0.8f",$crt_price)." ".sprintf("%0.8f",$sell_ammount)." $crt_order_number ".sprintf("%0.8f",$total_btc)." \n";						
 						open(my $filename_status_h, '>>', $filename_status) or warn "Could not open file '$filename_status' $!";
 						print $filename_status_h "$current_spike $crt_tstmp SOLD $crt_pair ".sprintf("%0.8f",$crt_price)." ".sprintf("%0.8f",$sell_ammount)." $crt_order_number ".sprintf("%0.8f",$total_btc)." \n";												
 						close $filename_status_h;		
 					}
-					else
-					{
-						my $delta_procent = 0;
-						# my $bought_price = $crt_price - (
-						if  ( $crt_price > $ticker_status )
-						{
-						$delta_procent = $crt_price - $ticker_status;
-						$delta_procent = ( $delta_procent * 100 ) / $crt_price; 
-						$delta_procent = $delta_procent * (-1) ;						
-						}
-						else
-						{
-						$delta_procent = $ticker_status - $crt_price;
-						$delta_procent = ( $delta_procent * 100 ) / $crt_price; 
-						}
-						print "$execute_crt_tstmp Order is not completed ! delta is $delta_procent %  $crt_price  $ticker_status \n";	
-						$sleep_interval = $step_wait_sell_execute;							
-					}					
+					# else
+					# {
+						# my $delta_procent = 0;
+						# # my $bought_price = $crt_price - (
+						# if  ( $crt_price > $ticker_status )
+						# {
+						# $delta_procent = $crt_price - $ticker_status;
+						# $delta_procent = ( $delta_procent * 100 ) / $crt_price; 
+						# $delta_procent = $delta_procent * (-1) ;						
+						# }
+						# else
+						# {
+						# $delta_procent = $ticker_status - $crt_price;
+						# $delta_procent = ( $delta_procent * 100 ) / $crt_price; 
+						# }
+						# print "$execute_crt_tstmp Order is not completed ! delta is $delta_procent %  $crt_price  $ticker_status \n";	
+						# $sleep_interval = $step_wait_sell_execute;							
+					# }					
 			}
 	case 4 { 
 					print "SOLD \n"; 
