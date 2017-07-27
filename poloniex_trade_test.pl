@@ -33,7 +33,7 @@ my $btc_balance = 0.001; # the ammount in BTC
 my @queue_pairs_lists; # list with all samplings
 my $queue_pairs_lists_size = 5; # size of the list with all samplings
 # my $wining_procent = 1.5; # the procent where we sell
-my $wining_procent = 0.015; # the procent where we sell
+my $wining_procent = 0.013; # the procent where we sell
 
 my $filename_status= "poloniex_status_test.ctrl";
 my $filename_status_h;
