@@ -65,6 +65,7 @@ my $volumeRef = 70; # only pairs with more then x coin volume
 
 sub get_json;
 sub timestamp;
+sub gm_timestamp;
 sub trim;
 sub get_state_machine;
 sub get_pair_list;
@@ -108,6 +109,8 @@ while (1)
 
 	# get the state machine
 	my $execute_crt_tstmp = timestamp();
+	my $gm_crt_tstmp = gm_timestamp();
+
 	$decoded_json=get_json("https://poloniex.com/public?command=returnOrderBook&currencyPair=ALL&depth=20");
 	foreach ( sort (keys( $decoded_json )) )
 	{
@@ -130,16 +133,23 @@ while (1)
 				{
 					print "\t$_->[0] $_->[1] \n";
 				}
+				# print "$gm_crt_tstmp \n";				
+				# print gmtime()."\n";
+				# my $crtTime = Time::Piece->strptime($gm_crt_tstmp,'%Y-%m-%d_%H-%M-%S');
+				# print Dumper $crtTime;				
+				# $crtTime -= 10800;
+				# print Dumper $crtTime;
 				
-				my $crtTime = Time::Piece->strptime($execute_crt_tstmp,'%Y-%m-%d_%H-%M-%S');
-				my $previousTime = $crtTime - 60;
-				my $crt_time_unix = $crtTime->epoch;
-				my $previous_time_unix = $previousTime->epoch;
+				# print $crtTime->epoch." \n";
+				# my $previousTime = $crtTime - 60;
+				# my $crt_time_unix = $crtTime->epoch;
+				# my $previous_time_unix = $previousTime->epoch;
 				
 
-				print "first previous $crt_time_unix $previous_time_unix \n";
-				print "https://poloniex.com/public?command=returnTradeHistory&currencyPair=$key&start=$previous_time_unix&end=$crt_time_unix \n";
-				my $decoded2_json=get_json("https://poloniex.com/public?command=returnTradeHistory&currencyPair=$key&start=$previous_time_unix&end=$crt_time_unix");
+				# print "first previous $crt_time_unix $previous_time_unix \n";
+				# print "https://poloniex.com/public?command=returnTradeHistory&currencyPair=$key&start=$previous_time_unix&end=$crt_time_unix \n";
+				# my $decoded2_json=get_json("https://poloniex.com/public?command=returnTradeHistory&currencyPair=$key&start=$previous_time_unix&end=$crt_time_unix");
+				my $decoded2_json=get_json("https://poloniex.com/public?command=returnTradeHistory&currencyPair=$key");
 				foreach (@{$decoded2_json})
 				{
 					my $elem = $_;
@@ -198,6 +208,15 @@ sub get_json
 
 sub timestamp {
    my $t = localtime;
+   return sprintf( "%04d-%02d-%02d_%02d-%02d-%02d",
+                  $t->year, $t->mon, $t->mday,
+                  $t->hour, $t->min, $t->sec );
+	# %Y-%m-%d_%H-%M-%S				  
+	# return localtime;
+}
+
+sub gm_timestamp {
+   my $t = gmtime;
    return sprintf( "%04d-%02d-%02d_%02d-%02d-%02d",
                   $t->year, $t->mon, $t->mday,
                   $t->hour, $t->min, $t->sec );
