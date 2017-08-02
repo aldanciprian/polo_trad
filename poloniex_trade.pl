@@ -35,7 +35,7 @@ my @queue_pairs_lists; # list with all samplings
 my $queue_pairs_lists_size = 5; # size of the list with all samplings
 my $wining_procent = 1.5; # the procent where we sell
 my $wining_procent_divided = $wining_procent / 100; # the procent where we sell
-my $down_delta_procent_threshold =  2; # the procent from max win down
+my $down_delta_procent_threshold =  0.5; # the procent from max win down
 my $filename_status= "poloniex_status.ctrl";
 my $filename_status_h;
 
@@ -224,7 +224,7 @@ while (1)
 					{
 						my $delta = $latest_price - $crt_price;
 						my $procent = (100 * $delta) / $crt_price;
-						print "$sell_ticker $latest_price ".get_tstmp($pairs_list{$sell_ticker})." delta_procent $procent \n";
+						print "$sell_ticker $latest_price ".get_tstmp($pairs_list{$sell_ticker})." delta_procent $procent $wining_procent\n";
 						if ( $procent >= $wining_procent )
 						{
 							open(my $filename_selling_h, '<', $filename_selling) or warn "Could not open file '$filename_selling' $!";

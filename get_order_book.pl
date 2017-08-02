@@ -20,6 +20,9 @@ my $apikey = $ENV{'POLONIEX_APIKEY'};
 my $sign = $ENV{'POLONIEX_SIGN'};
 
 my $decoded_json;
+
+my @samplings = ();
+my $samplings_lists_size = 6; #size of the list with all samplings
 my $hashref_temp = 0;
 
 my $previous_price = 0;
@@ -28,9 +31,9 @@ my $crt_order_number = 0; # in case there is a pending order, this should expres
 my $crt_pair = 0; # the current pair in the order
 my $crt_tstmp = 0; # the tstmp of the current order
 my $crt_price = 0; # the current price in the order
-my $crt_ammount = 0; # the current ammount in the order
+my $crt_amount = 0; # the current amount in the order
 my $current_spike = 0; # the current number of buy/sell 
-my $btc_balance = 0.001; # the ammount in BTC
+my $btc_balance = 0.001; # the amount in BTC
 my @queue_pairs_lists; # list with all samplings
 my $queue_pairs_lists_size = 5; # size of the list with all samplings
 my $wining_procent = 1.5; # the procent where we sell
@@ -43,7 +46,7 @@ my $filename_selling= "poloniex_selling.ctrl";
 my $filename_selling_h;
 
 
-my $filename_samplings= "poloniex_samplings.ctrl";
+my $filename_samplings= "get_order_book_samplings.ctrl";
 my $filename_samplings_h;
 
 my $sleep_interval = 10; # sleep interval in seconds , the default
@@ -70,6 +73,7 @@ sub trim;
 sub get_state_machine;
 sub get_pair_list;
 sub get_next_buy_ticker;
+sub get_order_trade_tick;
 
 sub get_tstmp;
 sub get_percentChange;
@@ -82,6 +86,138 @@ sub get_baseVolume;
 sub get_id; 
 sub get_highestBid;
 sub get_isFrozen;
+
+
+my $start_chunk = 0;
+open $filename_samplings_h, $filename_samplings or warn "Could not open $filename_samplings: $!";
+
+my $chunk_array;
+my $chunk_index = 0;
+my $previous_pair="";
+my %coinData_read;
+my $sells_index = 0;
+my @sells_read = ();
+my $buys_index = 0;
+my @buys_read = ();
+my $trades_index = 0;
+my @trades_read = ();
+my $pairs_read;
+
+my $pair = "";
+while( my $line = <$filename_samplings_h>)  {   
+	chomp($line);
+
+	if ( $start_chunk == 1 )
+	{
+		if ( $line =~ /.*STOP.*/ )
+		{
+			#stop
+			$start_chunk = 0;
+			$chunk_index++;
+			$sells_index = 0;
+			$buys_index = 0;	
+			$trades_index = 0;			
+			# print Dumper $chunk_array;
+			push @samplings , $chunk_array;
+			
+		}
+		else
+		{
+			if ( $previous_pair eq "" )
+				{
+					$previous_pair = $pair;
+				}
+			# every line here is good
+			if ( $previous_pair ne $pair )
+			{
+				# we have a new pair
+
+				
+				$sells_index = 0;
+				$buys_index = 0;	
+				$trades_index = 0;
+				
+				$previous_pair = $pair;
+			}
+			# print "$line \n";
+			if ( $line =~ /(\S*)\s+SELLS\s+(\S*?)\s+(\S*)/ )
+			{
+				$pair = $1;
+				my $sell_price = $2;
+				my $sell_amount = $3;
+				
+				$chunk_array->[$chunk_index]->{$pair}->{'sells'}->[$sells_index]->{'price'} = $sell_price;
+				$chunk_array->[$chunk_index]->{$pair}->{'sells'}->[$sells_index]->{'amount'} = $sell_amount;				
+				
+				# print Dumper $sells_read[$sells_index];				
+				$sells_index++;
+				$buys_index = 0;	
+				$trades_index = 0;
+
+			}
+			if ( $line =~ /(\S*)\s+BUYS\s+(\S*?)\s+(\S*)/ )			
+			{
+				$pair = $1;			
+				my $buy_price = $2;
+				my $buy_amount = $3;
+				$chunk_array->[$chunk_index]->{$pair}->{'buys'}->[$buys_index]->{'price'} = $buy_price;
+				$chunk_array->[$chunk_index]->{$pair}->{'buys'}->[$buys_index]->{'amount'} = $buy_amount;
+				$sells_index = 0;
+				$buys_index++;	
+				$trades_index = 0;
+			}
+			if ( $line =~ /(\S*)\s+TRADES\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*)/ )			
+			{
+				$pair = $1;			
+				my $trade_tstmp = $2;
+				my $trade_tradeID = $3;
+				my $trade_globalTradeID = $2;
+				my $trade_type = $3;
+				my $trade_amount = $2;
+				my $trade_rate = $3;
+				my $trade_total = $3;				
+
+				$chunk_array->[$chunk_index]->{$pair}->{'trades'}->[$trades_index]->{'tstmp'} = $trade_tstmp;
+				$chunk_array->[$chunk_index]->{$pair}->{'trades'}->[$trades_index]->{'tradeID'} = $trade_tradeID;
+				$chunk_array->[$chunk_index]->{$pair}->{'trades'}->[$trades_index]->{'globalTradeID'} = $trade_globalTradeID;
+				$chunk_array->[$chunk_index]->{$pair}->{'trades'}->[$trades_index]->{'type'} = $trade_type;
+				$chunk_array->[$chunk_index]->{$pair}->{'trades'}->[$trades_index]->{'amount'} = $trade_amount;
+				$chunk_array->[$chunk_index]->{$pair}->{'trades'}->[$trades_index]->{'rate'} = $trade_rate;
+				$chunk_array->[$chunk_index]->{$pair}->{'trades'}->[$trades_index]->{'total'} = $trade_total;
+				 # print Dumper $chunk_array->[$chunk_index]->{$pair}->[$trades_index];
+				$sells_index = 0;
+				$buys_index = 0;	
+				$trades_index++;
+			}
+			
+
+			# print "add to chunk \n";
+			# print "$line \n";
+			# # if ( $line =~ /(\S*?)\s+?(.*)$/ )
+			# # {
+				# print "[$1] [$2] \n";
+				# $tmp_hash_chunk{$1} = $2;
+			# }
+		}
+	}
+	if ( $line =~ /.*START\s*(\S*?)/ )
+	{
+		#starts
+		$start_chunk = 1;
+		$sells_index = 0;
+		$buys_index = 0;	
+		$trades_index = 0;
+		$pairs_read->{'tstmp'} = $1;
+	}
+}
+
+close $filename_samplings_h;
+
+
+# print Dumper @samplings;
+
+# exit 0;
+
 
 # get_json_post();
 my $polo_wrapper = Poloniex->new($apikey,$sign);
@@ -109,59 +245,17 @@ while (1)
 
 	# get the state machine
 	my $execute_crt_tstmp = timestamp();
-	my $gm_crt_tstmp = gm_timestamp();
-
-	$decoded_json=get_json("https://poloniex.com/public?command=returnOrderBook&currencyPair=ALL&depth=20");
-	foreach ( sort (keys( $decoded_json )) )
-	{
-		my $key = $_;
-		if ( $key =~ /BTC_.*/ )
-		{
-			print "$_ $decoded_json->{$key}->{'isFrozen'} $decoded_json->{$key}->{'seq'}\n";
-
-			if ( $decoded_json->{$key}->{'isFrozen'} == '0' )
-			{
-				print "\tbids buy \n";			
-				foreach (@{$decoded_json->{$key}->{'bids'}})
-				{
-				# print Dumper $_;				
-					print "\t$_->[0] $_->[1] \n";
-				}
-
-				print "\tasks sell \n";				
-				foreach (@{$decoded_json->{$key}->{'asks'}})
-				{
-					print "\t$_->[0] $_->[1] \n";
-				}
-				# print "$gm_crt_tstmp \n";				
-				# print gmtime()."\n";
-				# my $crtTime = Time::Piece->strptime($gm_crt_tstmp,'%Y-%m-%d_%H-%M-%S');
-				# print Dumper $crtTime;				
-				# $crtTime -= 10800;
-				# print Dumper $crtTime;
-				
-				# print $crtTime->epoch." \n";
-				# my $previousTime = $crtTime - 60;
-				# my $crt_time_unix = $crtTime->epoch;
-				# my $previous_time_unix = $previousTime->epoch;
-				
-
-				# print "first previous $crt_time_unix $previous_time_unix \n";
-				# print "https://poloniex.com/public?command=returnTradeHistory&currencyPair=$key&start=$previous_time_unix&end=$crt_time_unix \n";
-				# my $decoded2_json=get_json("https://poloniex.com/public?command=returnTradeHistory&currencyPair=$key&start=$previous_time_unix&end=$crt_time_unix");
-				my $decoded2_json=get_json("https://poloniex.com/public?command=returnTradeHistory&currencyPair=$key");
-				foreach (@{$decoded2_json})
-				{
-					my $elem = $_;
-					print "$elem->{'date'} $elem->{'tradeID'} $elem->{'globalTradeID'} $elem->{'type'} $elem->{'amount'} $elem->{'rate'} $elem->{'total'}\n";
-				}
-			}
-		}
-
-	}
-	
-	
 	 # print Dumper $decoded_json;
+	
+	print Dumper @samplings;
+	# foreach (@samplings)
+	# {
+		# print "$_ \n";
+	# }	
+	
+	# exit 0;
+	get_order_trade_tick();
+	
 	
 	
 	sleep $sleep_interval;
@@ -242,12 +336,12 @@ sub get_state_machine {
 		$crt_order_number = 0;
 		$crt_pair = 0;
 		$crt_price = 0;
-		$crt_ammount = 0;
+		$crt_amount = 0;
 		$crt_tstmp = 0;
 	}
 	else
 	{
-		# extract state   crt tstmp state pair price ammount ordernumber btc_balance
+		# extract state   crt tstmp state pair price amount ordernumber btc_balance
 		if ( $last_line =~ /\s*?(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s/ )
 		{
 
@@ -257,7 +351,7 @@ sub get_state_machine {
 			$crt_order_number = $7;
 			$crt_pair = $4;
 			$crt_price = $5;
-			$crt_ammount = $6;
+			$crt_amount = $6;
 			$btc_balance = $8;
 
 			if  ($crt_order_number == 0 )
@@ -662,4 +756,130 @@ sub get_isFrozen
 	{
 		return $1;
 	}
+}
+
+sub get_order_trade_tick
+{
+	# get the state machine
+	my %coinData;
+	my $execute_crt_tstmp = timestamp();
+	my $gm_crt_tstmp = gm_timestamp();
+
+	$decoded_json=get_json("https://poloniex.com/public?command=returnOrderBook&currencyPair=ALL&depth=20");
+	# print Dumper $decoded_json;
+	foreach ( sort (keys( $decoded_json )) )
+	{
+		my $key = $_;
+		my %orders;
+		if ( $key =~ /BTC_.*/ )
+		{
+			# print "$_ $decoded_json->{$key}->{'isFrozen'} $decoded_json->{$key}->{'seq'}\n";
+
+			if ( $decoded_json->{$key}->{'isFrozen'} == '0' )
+			{
+				# print "\tbids buy \n";			
+				my @buys = ();
+				my @sells = ();
+				foreach (@{$decoded_json->{$key}->{'bids'}})
+				{
+				# print Dumper $_;				
+					my %buy;
+					# print "\t$_->[0] $_->[1] \n";
+					$buy{'price'} = $_->[0];
+					$buy{'amount'} = $_->[1];					
+					push @buys , \%buy;
+				}
+
+				# print Dumper @buys;
+				
+				# print "\tasks sell \n";				
+				foreach (@{$decoded_json->{$key}->{'asks'}})
+				{
+					my %sell;
+					# print "\t$_->[0] $_->[1] \n";
+					$sell{'price'} = $_->[0];
+					$sell{'amount'} = $_->[1];					
+					push @sells , \%sell;					
+				}
+				# print Dumper @sells;
+				
+				$orders{'buys'} = \@buys;
+				$orders{'sells'} = \@sells;
+				
+				# print "first previous $crt_time_unix $previous_time_unix \n";
+				# print "https://poloniex.com/public?command=returnTradeHistory&currencyPair=$key&start=$previous_time_unix&end=$crt_time_unix \n";
+				# my $decoded2_json=get_json("https://poloniex.com/public?command=returnTradeHistory&currencyPair=$key&start=$previous_time_unix&end=$crt_time_unix");
+				my $decoded2_json=get_json("https://poloniex.com/public?command=returnTradeHistory&currencyPair=$key");
+				my @trades =();
+				foreach (@{$decoded2_json})
+				{
+					my %trade;
+					my $elem = $_;
+					my $elem_tstmp = $elem->{'date'};
+					$elem_tstmp =~ s/ /_/g;
+					$elem_tstmp =~ s/:/-/g;
+					# print "[$execute_crt_tstmp] [$elem_tstmp] \n";
+					my $execute_crt_tstmp_Time = Time::Piece->strptime($execute_crt_tstmp,'%Y-%m-%d_%H-%M-%S');
+					my $elem_tstmp_Time = Time::Piece->strptime($elem_tstmp,'%Y-%m-%d_%H-%M-%S');
+					# print "Diff time ".($execute_crt_tstmp_Time - $elem_tstmp_Time)."\n";
+					if  ( ( $execute_crt_tstmp_Time - $elem_tstmp_Time ) <  11000 )
+					{
+						# print "$elem_tstmp $elem->{'tradeID'} $elem->{'globalTradeID'} $elem->{'type'} $elem->{'amount'} $elem->{'rate'} $elem->{'total'}\n";					
+						$trade{'tstmp'} = $elem_tstmp;
+						$trade{'tradeID'} = $elem->{'tradeID'};
+						$trade{'type'} = $elem->{'type'};
+						$trade{'amount'} = $elem->{'amount'};
+						$trade{'rate'} = $elem->{'rate'};
+						$trade{'total'} = $elem->{'total'};
+						$trade{'globalTradeID'} = $elem->{'globalTradeID'};
+						push @trades , \%trade;
+					}
+				}
+				$orders{'trades'} = \@trades;
+				$coinData{$key} = \%orders;
+				# print Dumper %orders;
+			}
+		}
+
+	}
+	$coinData{'tstmp'} = $execute_crt_tstmp;
+
+	push @samplings , \%coinData;
+	# print Dumper @samplings;
+	if ($#samplings >= $samplings_lists_size )
+	{
+		shift @samplings;
+	}
+	
+	open(my $filename_samplings_h, '>', $filename_samplings) or warn "Could not open file '$filename_samplings' $!";
+	foreach (@samplings)
+	{
+		my $elem = \%$_;
+		print $filename_samplings_h "START $elem->{'tstmp'} \n";
+		foreach (sort (keys($elem)))
+		{
+			if ( $_ ne "tstmp" )
+			{
+				my $key = $_;
+				foreach (@{$elem->{$key}->{'sells'}})
+				{
+					my $sell = \%$_;
+					print $filename_samplings_h "$key SELLS $sell->{'price'} $sell->{'amount'} \n";
+				}
+				foreach (@{$elem->{$key}->{'buys'}})
+				{
+					my $buy = \%$_;
+					print $filename_samplings_h "$key BUYS $buy->{'price'} $buy->{'amount'} \n";
+				}
+				foreach (@{$elem->{$key}->{'trades'}})
+				{
+					my $trades = \%$_;
+					print $filename_samplings_h "$key TRADES $trades->{'tstmp'} $trades->{'tradeID'} $trades->{'globalTradeID'} $trades->{'type'} $trades->{'amount'} $trades->{'rate'} $trades->{'total'}\n";
+				}			
+			}
+		}
+		print $filename_samplings_h "STOP\n";
+	}
+	close $filename_samplings_h;	
+
 }
