@@ -34,9 +34,10 @@ my $btc_balance = 0.001; # the ammount in BTC
 my @queue_pairs_lists; # list with all samplings
 my $queue_pairs_lists_size = 5; # size of the list with all samplings
 my $wining_procent = 1.2; # the procent where we sell
-my $buy_procent = 1.5; # the procent up down from the crt price where we decide to buy
+my $buy_procent = 1.5; # the procent down from the crt price where we decide to buy
+my $sell_procent = 1.8; # the procent up from the crt price where we decide to buy
 my $wining_procent_divided = $wining_procent / 100; # the procent where we sell
-my $down_delta_procent_threshold =  0.5; # the procent from max win down
+my $down_delta_procent_threshold =  0.35; # the procent from max win down
 my $filename_status= "poloniex_market_status.ctrl";
 my $filename_status_h;
 
@@ -111,6 +112,7 @@ while (1)
 
 	# get the state machine
 	my $execute_crt_tstmp = timestamp();
+	print "============================= poloniex trade market $execute_crt_tstmp  $$ ======================\n";		
 	my $state = get_state_machine();
 	
 	#switch for each state
@@ -172,7 +174,7 @@ while (1)
 					{
 						# there is no order
 						# print "there is no order \n";
-						my %ticker_to_buy = get_next_buy_ticker_market();
+						my %ticker_to_buy = get_next_buy_ticker_market($btc_balance);
 						my $buy_ticker = $ticker_to_buy{'pair'};
 						if ( $buy_ticker ne "WRONG" )
 						{
@@ -193,7 +195,7 @@ while (1)
 							my $buy_ammount = $btc_balance / $price ;
 							# $buy_ammount = $buy_ammount - ($buy_ammount * 0.0015);
 							$current_spike++;
-
+							print "amount to buy $buy_ammount $btc_balance $price \n";
 							$decoded_json = $polo_wrapper->buy("BTC_$buy_ticker",$price,$buy_ammount);
 							# $buy_ammount = $buy_ammount - ($buy_ammount * 0.0015);
 							 # print Dumper $polo_wrapper->buy("BTC_$buy_ticker",$price,$buy_ammount);
@@ -215,111 +217,116 @@ while (1)
 	case 2 { 
 					print "BOUGHT \n"; 
 
-					# check if the current price is higher then bought price
-					my %pairs_list = get_pair_list();
-
 					my $sell_ticker = $crt_pair;
 					$sell_ticker =~ s/BTC_(.*)/$1/g ;
+					
+					
+					# case 1					
+					# # check if the current price is higher then bought price
+					# my %pairs_list = get_pair_list();
+					
 					# print Dumper $pairs_list{$sell_ticker};					
-					my $latest_price = get_last($pairs_list{$sell_ticker});
-					# print "latest_price $latest_price\n";
+					
 
-					if ($latest_price > $crt_price )
-					{
-						my $delta = $latest_price - $crt_price;
-						my $procent = (100 * $delta) / $crt_price;
-						print "$sell_ticker $latest_price ".get_tstmp($pairs_list{$sell_ticker})." delta_procent $procent $wining_procent\n";
-						if ( $procent >= $wining_procent )
-						{
-							open(my $filename_selling_h, '<', $filename_selling) or warn "Could not open file '$filename_selling' $!";
-							my $last_line;
-							$last_line = $_,while (<$filename_selling_h>);
-							close $filename_selling_h;
-							chomp($last_line);
+					# my $latest_price = get_last($pairs_list{$sell_ticker});
+					# # print "latest_price $latest_price\n";
+
+					# if ($latest_price > $crt_price )
+					# {
+						# my $delta = $latest_price - $crt_price;
+						# my $procent = (100 * $delta) / $crt_price;
+						# print "$sell_ticker $latest_price ".get_tstmp($pairs_list{$sell_ticker})." delta_procent $procent $wining_procent\n";
+						# if ( $procent >= $wining_procent )
+						# {
+							# open(my $filename_selling_h, '<', $filename_selling) or warn "Could not open file '$filename_selling' $!";
+							# my $last_line;
+							# $last_line = $_,while (<$filename_selling_h>);
+							# close $filename_selling_h;
+							# chomp($last_line);
 							
-							if ( $last_line =~ /^$/ )
-							{
-								print "$filename_selling is empty !!\n";						
-								$previous_price = $latest_price;
-							}
-							else
-							{
-								$previous_price = $last_line;
-							}
+							# if ( $last_line =~ /^$/ )
+							# {
+								# print "$filename_selling is empty !!\n";						
+								# $previous_price = $latest_price;
+							# }
+							# else
+							# {
+								# $previous_price = $last_line;
+							# }
 							
-							if ( $previous_price > $latest_price )
-							{
-								# we went over the top and going down
-								my $down_delta = $previous_price - $latest_price;
-								my $down_delta_procent =  ( $down_delta * 100 ) / $previous_price ;
+							# if ( $previous_price > $latest_price )
+							# {
+								# # we went over the top and going down
+								# my $down_delta = $previous_price - $latest_price;
+								# my $down_delta_procent =  ( $down_delta * 100 ) / $previous_price ;
 								
-								if ( $down_delta_procent >= $down_delta_procent_threshold )
-								{
-									# we went down to much
-									#it is time to sell
-									if ( $latest_price > 0.00001000 )
-									{
+								# if ( $down_delta_procent >= $down_delta_procent_threshold )
+								# {
+									# # we went down to much
+									# #it is time to sell
+									# if ( $latest_price > 0.00001000 )
+									# {
 
-										$latest_price = $latest_price - 0.00000010;								
-									}
-									else
-									{
-										# just decrease with the small resolution
-										$latest_price = $latest_price - 0.00000001;							
-									}
+										# $latest_price = $latest_price - 0.00000010;								
+									# }
+									# else
+									# {
+										# # just decrease with the small resolution
+										# $latest_price = $latest_price - 0.00000001;							
+									# }
 
-									$decoded_json = $polo_wrapper->sell("BTC_$sell_ticker",$latest_price,$crt_ammount);
-									$crt_order_number = $decoded_json->{'orderNumber'};
-									# print Dumper $decoded_json;
-									my $btc_after_sell = $latest_price * $crt_ammount;
-									$btc_after_sell = $btc_after_sell - ( $btc_after_sell * 0.0015 );
-									print "$current_spike $execute_crt_tstmp SELLING BTC_$sell_ticker ".sprintf("%0.8f",$latest_price)." $crt_ammount $crt_order_number $btc_after_sell \n";
-									open(my $filename_status_h, '>>', $filename_status) or warn "Could not open file '$filename_status' $!";
-									print $filename_status_h "$current_spike $execute_crt_tstmp SELLING BTC_$sell_ticker ".sprintf("%0.8f",$latest_price)." $crt_ammount $crt_order_number $btc_after_sell \n";
-									close $filename_status_h;					
-									$sleep_interval = $step_wait_execute;									
-								}
-								else
-								{
-									print "let it go down $sell_ticker $latest_price $procent $down_delta_procent\n";
-								}
-							}
-							else
-							{
-								print "let it raise  $sell_ticker $latest_price $procent \n";
-								open(my $filename_selling_h, '>', $filename_selling) or warn "Could not open file '$filename_selling' $!";
-								print $filename_selling_h "$latest_price\n";
-								close $filename_selling_h;									
-							}
-							$sleep_interval = $step_wait_selling;						
-						}
-						else
-						{
-							print "Not reached the wining procent $sell_ticker $latest_price  $crt_price $procent \n";
-						}
-					}
-					else
-					{
-						my $delta = $crt_price - $latest_price;
-						my $procent = (100 * $delta) / $crt_price;
-						print "price smaller then bought price $sell_ticker $latest_price  $crt_price -$procent  \n";						
-						$sleep_interval = $step_wait_selling;					
-					}
+									# $decoded_json = $polo_wrapper->sell("BTC_$sell_ticker",$latest_price,$crt_ammount);
+									# $crt_order_number = $decoded_json->{'orderNumber'};
+									# # print Dumper $decoded_json;
+									# my $btc_after_sell = $latest_price * $crt_ammount;
+									# $btc_after_sell = $btc_after_sell - ( $btc_after_sell * 0.0015 );
+									# print "$current_spike $execute_crt_tstmp SELLING BTC_$sell_ticker ".sprintf("%0.8f",$latest_price)." $crt_ammount $crt_order_number $btc_after_sell \n";
+									# open(my $filename_status_h, '>>', $filename_status) or warn "Could not open file '$filename_status' $!";
+									# print $filename_status_h "$current_spike $execute_crt_tstmp SELLING BTC_$sell_ticker ".sprintf("%0.8f",$latest_price)." $crt_ammount $crt_order_number $btc_after_sell \n";
+									# close $filename_status_h;					
+									# $sleep_interval = $step_wait_execute;									
+								# }
+								# else
+								# {
+									# print "let it go down $sell_ticker $latest_price $procent $down_delta_procent\n";
+								# }
+							# }
+							# else
+							# {
+								# print "let it raise  $sell_ticker $latest_price $procent \n";
+								# open(my $filename_selling_h, '>', $filename_selling) or warn "Could not open file '$filename_selling' $!";
+								# print $filename_selling_h "$latest_price\n";
+								# close $filename_selling_h;									
+							# }
+							# $sleep_interval = $step_wait_selling;						
+						# }
+						# else
+						# {
+							# print "Not reached the wining procent $sell_ticker $latest_price  $crt_price $procent \n";
+						# }
+					# }
+					# else
+					# {
+						# my $delta = $crt_price - $latest_price;
+						# my $procent = (100 * $delta) / $crt_price;
+						# print "price smaller then bought price $sell_ticker $latest_price  $crt_price -$procent  \n";						
+						# $sleep_interval = $step_wait_selling;					
+					# }
 					
 					#case 2
 					#make a price higher with 1.5 %
 					#sell with that price and wait for the execution
-					# my $latest_price = $crt_price + ( $crt_price * $wining_procent);
-					# $decoded_json = $polo_wrapper->sell("BTC_$sell_ticker",$latest_price,$crt_ammount);
-					# $crt_order_number = $decoded_json->{'orderNumber'};
-					# # print Dumper $decoded_json;
-					# my $btc_after_sell = $latest_price * $crt_ammount;
-					# $btc_after_sell = $btc_after_sell - ( $btc_after_sell * 0.0015 );
-					# print "$current_spike $execute_crt_tstmp SELLING BTC_$sell_ticker ".sprintf("%0.8f",$latest_price)." $crt_ammount $crt_order_number $btc_after_sell \n";
-					# open(my $filename_status_h, '>>', $filename_status) or warn "Could not open file '$filename_status' $!";
-					# print $filename_status_h "$current_spike $execute_crt_tstmp SELLING BTC_$sell_ticker ".sprintf("%0.8f",$latest_price)." $crt_ammount $crt_order_number $btc_after_sell \n";
-					# close $filename_status_h;					
-					# $sleep_interval = $step_wait_selling;
+					my $latest_price = $crt_price + ( $crt_price * ($wining_procent / 100) );
+					$decoded_json = $polo_wrapper->sell("BTC_$sell_ticker",$latest_price,$crt_ammount);
+					$crt_order_number = $decoded_json->{'orderNumber'};
+					# print Dumper $decoded_json;
+					my $btc_after_sell = $latest_price * $crt_ammount;
+					$btc_after_sell = $btc_after_sell - ( $btc_after_sell * 0.0015 );
+					print "$current_spike $execute_crt_tstmp SELLING BTC_$sell_ticker ".sprintf("%0.8f",$latest_price)." $crt_ammount $crt_order_number $btc_after_sell \n";
+					open(my $filename_status_h, '>>', $filename_status) or warn "Could not open file '$filename_status' $!";
+					print $filename_status_h "$current_spike $execute_crt_tstmp SELLING BTC_$sell_ticker ".sprintf("%0.8f",$latest_price)." $crt_ammount $crt_order_number $btc_after_sell \n";
+					close $filename_status_h;					
+					$sleep_interval = $step_wait_selling;
 		    }	
 	case 3 { 
 					print "SELLING \n";
@@ -898,6 +905,7 @@ sub get_order_trade_tick
 
 sub get_next_buy_ticker_market
 {
+	my $balance_to_buy_with =  shift;
 	my $order_sampling;	
 	my %crt_pairs_list = get_pair_list();
 
@@ -925,7 +933,7 @@ sub get_next_buy_ticker_market
 		
 		# print sprintf("%0.15f",($crt_price - ( $crt_price * ( $buy_procent / 100 ) )))." ";
 		my $delta_ref_down = $crt_price - ( $crt_price * ( $buy_procent / 100 ) );
-		my $delta_ref_up = ( $crt_price * ( $buy_procent / 100 ) ) + $crt_price;
+		my $delta_ref_up = ( $crt_price * ( $sell_procent / 100 ) ) + $crt_price;
 		
 		my $sellers_amount = 0;
 		my $buyers_amount = 0;
@@ -963,35 +971,49 @@ sub get_next_buy_ticker_market
 			}
 
 		}
+
+		my $potential_amount = $balance_to_buy_with / $price;	
+		#remove my potential buy from the buy ammount;
+		$buyers_amount -= $potential_amount;
 		
-		if ( $sellers_amount >= $buyers_amount )
+		# only buy if the buyers amount minus my potential to buy ammount is still very high compare to sellers ammount
+		if ( $sellers_amount < $buyers_amount )
+		# {
+			# $seller_desperate = 1;		
+			# if ( $buyers_amount != 0 )
+			# {
+				# $market_amount_procent = ( ( ($sellers_amount - $buyers_amount) * 100 ) / $buyers_amount );
+				# if ( $crt_pair_price{'market_procent'} <= $market_amount_procent )
+				# {
+					# $crt_pair_price{'market_procent'} = $market_amount_procent;
+					# $crt_pair_price{'pair'} = $pair_key;
+					# $crt_pair_price{'price'} = $price;							
+				# }
+			# }
+		# }
+		# else
 		{
-			$seller_desperate = 1;		
-			if ( $buyers_amount != 0 )
+			# the sellers are not desperate,but the buyers are
+			$seller_desperate = 0;					
+			if ( $sellers_amount != 0 )
 			{
-				$market_amount_procent = ( ( ($sellers_amount - $buyers_amount) * 100 ) / $buyers_amount );
+				$market_amount_procent = ( ( ($buyers_amount - $sellers_amount) * 100 ) / $sellers_amount );			
 				if ( $crt_pair_price{'market_procent'} <= $market_amount_procent )
 				{
 					$crt_pair_price{'market_procent'} = $market_amount_procent;
 					$crt_pair_price{'pair'} = $pair_key;
 					$crt_pair_price{'price'} = $price;							
+					$crt_pair_price{'buyers_amount'} = $buyers_amount;
+					$crt_pair_price{'sellers_amount'} = $sellers_amount;
 				}
 			}
-		}
-		# else
-		# {
-			# # $seller_desperate = 0;					
-			# # if ( $sellers_amount != 0 )
-			# # {
-				# # $market_amount_procent = ( ( ($buyers_amount - $sellers_amount) * 100 ) / $sellers_amount );			
-			# # }
 		
-		# }
+		}
 		
 		# $orders_bought{$key} = $crt_price;
 		# print "$pair_key $crt_price ".sprintf("%0.8f",$delta_ref_up)." ".sprintf("%0.8f",$delta_ref_down)." $buyers_amount $sellers_amount $seller_desperate $market_amount_procent % \n";				
 	}	
 		
-	print "The biggest seller market_procent is for $crt_pair_price{'pair'} $crt_pair_price{'market_procent'} %  $crt_pair_price{'price'}\n";
+	print "The biggest buyyer market_procent is for $crt_pair_price{'pair'} $crt_pair_price{'market_procent'} %  $crt_pair_price{'price'} $crt_pair_price{'buyers_amount'} $crt_pair_price{'sellers_amount'} \n";
 	return %crt_pair_price;
 }
