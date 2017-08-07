@@ -59,6 +59,7 @@ my $step_sampling = 10; # number of seconds between samples when deciding to buy
 my $loosingProcent = 20; #the loss limit
 my $volumeRef = 70; # only pairs with more then x coin volume
 
+my $buy_timeout = 0; #if it doesn't buy...cancel the order
 # BUYING 1
 # BOUGHT 2
 # SELLING 3
@@ -119,7 +120,7 @@ while (1)
 	#switch for each state
 	switch ($state) {
 	case 1 { 
-					print "BUYING \n";
+					print "BUYING $crt_pair \n";
 					my $order_is_not_complete = 0;
 					if ( $has_pending_order == 1 )
 					{
@@ -168,7 +169,26 @@ while (1)
 						}
 						else
 						{
-							print "Order is not completed ! \n";						
+							print "Order is not completed ! \n";			
+							$buy_timeout++;
+							#after 15 cycles cancel the order
+							if ( $buy_timeout == 15 )
+							{
+								# cancel the order and go back to buying
+								$polo_wrapper->cancel_order($crt_pair,$crt_order_number);
+								#delete the last line from the status file
+								open($filename_status_h,"+<$filename_status") or die;
+									while (<$filename_status_h>) {
+											if (eof($filename_status_h)) {
+												 seek($filename_status_h,-(length($_)),2) or die;
+												 truncate($filename_status_h,tell($filename_status_h)) or die;
+											}
+									}
+								close $filename_status_h;
+								
+								#wait 20 seconds to cancel the order
+								sleep 20;
+							}
 						}
 					}
 					else
@@ -197,6 +217,7 @@ while (1)
 							# $buy_ammount = $buy_ammount - ($buy_ammount * 0.0015);
 							$current_spike++;
 							print "amount to buy $buy_ammount $btc_balance $price \n";
+							$buy_timeout = 0;
 							$decoded_json = $polo_wrapper->buy("BTC_$buy_ticker",$price,$buy_ammount);
 							# $buy_ammount = $buy_ammount - ($buy_ammount * 0.0015);
 							 # print Dumper $polo_wrapper->buy("BTC_$buy_ticker",$price,$buy_ammount);

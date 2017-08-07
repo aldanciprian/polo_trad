@@ -11,6 +11,7 @@ use Time::Piece;
 use LWP::UserAgent;
 use Digest::SHA qw(hmac_sha512_hex);
 use Switch;
+use File::Basename;
 
 use Poloniex;
 
@@ -32,19 +33,27 @@ my $crt_ammount = 0; # the current ammount in the order
 my $current_spike = 0; # the current number of buy/sell 
 my $btc_balance = 0.001; # the ammount in BTC
 my @queue_pairs_lists; # list with all samplings
-my $queue_pairs_lists_size = 5; # size of the list with all samplings
+my $queue_pairs_lists_size = 50; # size of the list with all samplings
 my $wining_procent = 1.35; # the procent where we sell
 my $wining_procent_divided = $wining_procent / 100; # the procent where we sell
 my $down_delta_procent_threshold =  0.35; # the procent from max win down
-my $filename_status= "poloniex_status.ctrl";
+my $basename = basename($0,".pl");;
+
+
+
+my $filename_status= $basename."_status.ctrl";
 my $filename_status_h;
 
-my $filename_selling= "poloniex_selling.ctrl";
+my $filename_selling= $basename."_selling.ctrl";
 my $filename_selling_h;
 
 
-my $filename_samplings= "poloniex_samplings.ctrl";
+my $filename_samplings= $basename."_samplings.ctrl";
 my $filename_samplings_h;
+
+my $filename_macd= $basename."_macd.ctrl";
+my $filename_macd_h;
+
 
 my $sleep_interval = 10; # sleep interval in seconds , the default
 my $step_wait_execute = 10; # number of seconds to wait until verify if the order is executed
@@ -194,6 +203,7 @@ while (1)
 						if ( $buy_ticker ne "WRONG" )
 						{
 							print "buy now \n";
+							exit 0;
 							# buy now
 							# write status file - last line
 							my $price = get_last($queue_pairs_lists[ $queue_pairs_lists_size - 1]->{$buy_ticker});
@@ -656,6 +666,25 @@ sub get_next_buy_ticker
 			return $decline_ticker;
 		}
 
+		#macd
+		open(my $filename_macd_h, '<', "macd/$ticker_$filename_macd") or warn "Could not open file 'macd/$ticker_$filename_macd' $!";
+		my $last_line_macd;
+		$last_line_macd = $_,while (<$filename_macd_h>);
+		close $filename_macd_h;
+		chomp($last_line_macd);
+		
+		if ( $last_line_macd =~ /^$/ )
+		{
+			print "$filename_macd is empty !!\n";						
+			$previous_price = $latest_price;
+		}
+		else
+		{
+			$previous_price = $last_line_macd;
+		}
+		
+		#macd end
+		
 		for (my $i = 0; $i < ($queue_pairs_lists_size - 1) ; $i++)
 		{	
 			 if ( get_last($queue_pairs_lists[ $i ]->{$ticker}) < get_last($queue_pairs_lists[ $i+1 ]->{$ticker}))
