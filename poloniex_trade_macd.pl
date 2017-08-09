@@ -1,4 +1,5 @@
 #!/usr/bin/perl 
+#!/usr/bin/perl 
 
 
 use LWP::Simple;                # From CPAN
@@ -12,7 +13,8 @@ use LWP::UserAgent;
 use Digest::SHA qw(hmac_sha512_hex);
 use Switch;
 use File::Basename;
-
+use threads;
+use threads::shared;
 use Poloniex;
 
 
@@ -33,7 +35,7 @@ my $crt_ammount = 0; # the current ammount in the order
 my $current_spike = 0; # the current number of buy/sell 
 my $btc_balance = 0.001; # the ammount in BTC
 my @queue_pairs_lists; # list with all samplings
-my $queue_pairs_lists_size = 50; # size of the list with all samplings
+my $queue_pairs_lists_size = 30; # size of the list with all samplings
 my $wining_procent = 1.35; # the procent where we sell
 my $wining_procent_divided = $wining_procent / 100; # the procent where we sell
 my $down_delta_procent_threshold =  0.35; # the procent from max win down
@@ -59,7 +61,7 @@ my $sleep_interval = 10; # sleep interval in seconds , the default
 my $step_wait_execute = 10; # number of seconds to wait until verify if the order is executed
 my $step_wait_selling = 10;
 my $step_wait_sell_execute = 30;
-my $step_sampling = 80; # number of seconds between samples when deciding to buy
+my $step_sampling = 3; # number of seconds between samples when deciding to buy
 
 
 my $loosingProcent = 20; #the loss limit
@@ -92,6 +94,22 @@ sub get_id;
 sub get_highestBid;
 sub get_isFrozen;
 
+
+my $thr_sampling;
+sub sampling_thread
+{
+	while (1)
+	{
+	my $thread_tstmp =  timestamp();
+	print "========================== From sampling thread $thread_tstmp $$=============================\n";
+	populate_queue();
+	get_next_buy_ticker($crt_pair);
+	my $sampling_interval = $step_sampling;
+	sleep $sampling_interval;
+	}
+}
+
+
 # get_json_post();
 my $polo_wrapper = Poloniex->new($apikey,$sign);
 # my $balances = $polo_wrapper->get_balances();
@@ -105,7 +123,10 @@ my $polo_wrapper = Poloniex->new($apikey,$sign);
 # print Dumper $polo_wrapper->get_open_orders("all");
 # print Dumper $polo_wrapper->get_open_orders("all");						
 
- # exit 0;
+$thr_sampling = threads->create('sampling_thread');
+	
+$thr_sampling->join();
+ exit 0;
 while (1)
 {
 							# $decoded_json = $polo_wrapper->get_my_trade_history("BTC_XBC");
@@ -623,11 +644,13 @@ sub get_pair_list {
 
 sub get_next_buy_ticker
 {
+	my $func_tstmp = timestamp();
+	my $funcTime = Time::Piece->strptime($func_tstmp,'%Y-%m-%d_%H-%M-%S');
 	my $previous_ticker = shift;
 	$previous_ticker = "BTC_$previous_ticker";
 	my $highest_negative_delta = 0;
 	my $decline_ticker = "WRONG";
-	populate_queue();
+
 	if ( $#queue_pairs_lists < ($queue_pairs_lists_size - 1) )
 	{
 		print "we don't have a full sample list yet !\n";
@@ -638,11 +661,11 @@ sub get_next_buy_ticker
 	foreach (sort (keys ($queue_pairs_lists[$queue_pairs_lists_size - 1 ])))
 	{
 		my $ticker = $_;
-		if ( $previous_ticker eq $ticker )
-		{
+		# if ( $previous_ticker eq $ticker )
+		# {
 			# don't try to buy the same ticker twice in a row
-			next;
-		}
+			# next;
+		# }
 		
 		my $isTickerGood = 0;
 		
@@ -654,20 +677,33 @@ sub get_next_buy_ticker
 		my $previousTime = Time::Piece->strptime($previous_tstmp,'%Y-%m-%d_%H-%M-%S');
 		my $lastTime = Time::Piece->strptime($last_tstmp,'%Y-%m-%d_%H-%M-%S');
 		
-		if ( ($lastTime - $firstTime) > (($step_sampling  * $queue_pairs_lists_size ) + 20) )
+		my $temp_threshold = ($step_sampling  * $queue_pairs_lists_size ) + 20;
+		if ( ($lastTime - $firstTime) > $temp_threshold )
 		{
-			print "the time distance between the first and last sample is to high ".($lastTime - $firstTime)." \n";
+			print "the time distance between the first and last sample is to high ".($lastTime - $firstTime)."  $temp_threshold \n";
 			return $decline_ticker;
 		}
 		
 		if  (  ($lastTime - $previousTime) < $step_sampling )
 		{
-			print "distance from the last to previous is to small \n";
+			print "distance from the last to previous is to small ".($lastTime - $previousTime)."\n";
 			return $decline_ticker;
 		}
 
 		#macd
-		open(my $filename_macd_h, '<', "macd/$ticker_$filename_macd") or warn "Could not open file 'macd/$ticker_$filename_macd' $!";
+		my $previous_macd_tstmp = 0;
+		my $previous_macd_26ema = 0;
+		my $previous_macd_12ema = 0;
+		my $previous_macd_9ema = 0;
+		my $previous_macd = 0;
+		my $previous_macd_cross = 0;
+		my $previous_macd_cross_direction = 0;
+		my $previous_macd_zero = 0;
+		
+		my $restart_ema = 0;
+		
+		my $compose_file = "macd/".$ticker."_".$filename_macd;
+		open(my $filename_macd_h, '<', $compose_file) or warn "Could not open file $compose_file $!";
 		my $last_line_macd;
 		$last_line_macd = $_,while (<$filename_macd_h>);
 		close $filename_macd_h;
@@ -675,60 +711,144 @@ sub get_next_buy_ticker
 		
 		if ( $last_line_macd =~ /^$/ )
 		{
-			print "$filename_macd is empty !!\n";						
-			$previous_price = $latest_price;
+			# print "$compose_file is empty !!\n";						
+			$restart_ema = 1;
 		}
 		else
 		{
-			$previous_price = $last_line_macd;
+			# print "$compose_file is not empty \n";
+			# tstmp 26ema 12ema 9ema macd macdcross macdcroos_direction macd_zero
+			# print "[$last_line_macd]\n";
+			if ( $last_line_macd =~ /(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+/ )
+			{
+				my $previous_macd_price = $2;
+				my $previous_macd_tstmp = $1;
+				my $previous_macd_26ema = $3;
+				my $previous_macd_12ema = $4;
+				my $previous_macd_9ema = $5;
+				my $previous_macd = $6;
+				my $previous_macd_cross = $7;
+				my $previous_macd_cross_direction = $8;
+				my $previous_macd_zero = $9;
+				
+				my $previousMacdTime = Time::Piece->strptime($previous_macd_tstmp,'%Y-%m-%d_%H-%M-%S');
+				print "$func_tstmp  $previous_macd_tstmp ".($funcTime - $previousMacdTime)."\n";
+				
+				if ( ($funcTime - $previousMacdTime) > (($step_sampling  * 26 ) + 20) )
+				{
+					print "$ticker We need to restart calculate EMA \n";
+					$restart_ema = 1;
+				}
+			}
+		}
+
+	
+
+		my $crt_26ema =  0;
+		my $crt_12ema =  0;
+		my $crt_9ema =  0;
+		my $crt_macd = 0;
+		my $crt_macd_cross = 0;
+		my $crt_macd_cross_direction = 0;
+		my $crt_macd_zero = 0;
+		
+		my $current_price = get_last($queue_pairs_lists[$queue_pairs_lists_size - 1]->{$ticker});
+		if ( $restart_ema == 1 )
+		{
+			print "restart ema calculus \n";
+			# print Dumper \%{$queue_pairs_lists[0]};
+		
+			foreach (my $i = 0 ; $i < 26 ; $i++)
+			{
+				print get_tstmp($queue_pairs_lists[($queue_pairs_lists_size - $i) - 1]->{$ticker})."  ".get_last($queue_pairs_lists[($queue_pairs_lists_size - $i) - 1]->{$ticker})." \n";
+				$crt_26ema += get_last($queue_pairs_lists[($queue_pairs_lists_size - $i) - 1]->{$ticker});
+			}
+			$crt_26ema = $crt_26ema / 26;
+
+			
+			foreach (my $i = 0 ; $i < 12 ; $i++)
+			{
+				print get_tstmp($queue_pairs_lists[($queue_pairs_lists_size - $i) - 1]->{$ticker})."  ".get_last($queue_pairs_lists[($queue_pairs_lists_size - $i) - 1]->{$ticker})." \n";
+				$crt_12ema += get_last($queue_pairs_lists[($queue_pairs_lists_size - $i) - 1]->{$ticker});
+			}
+			$crt_12ema = $crt_12ema / 12;
+
+
+
+			$crt_9ema = $crt_26ema - $crt_12ema;
+
+			print "$func_tstmp $current_price ".sprintf("%0.15f",$crt_26ema)." ".sprintf("%0.15f",$crt_12ema)." ".sprintf("%0.15f",$crt_9ema)." ".sprintf("%0.15f",$crt_macd)." ".sprintf("%0.15f",$crt_macd_cross)." ".sprintf("%0.15f",$crt_macd_cross_direction)." ".sprintf("%0.15f",$crt_macd_zero)." \n";		
+			open(my $filename_macd_h, '>>', $compose_file) or warn "Could not open file $compose_file $!";
+			print $filename_macd_h "$func_tstmp $current_price ".sprintf("%0.15f",$crt_26ema)." ".sprintf("%0.15f",$crt_12ema)." ".sprintf("%0.15f",$crt_9ema)." ".sprintf("%0.15f",$crt_macd)." ".sprintf("%0.15f",$crt_macd_cross)." ".sprintf("%0.15f",$crt_macd_cross_direction)." ".sprintf("%0.15f",$crt_macd_zero)." \n";
+			close $filename_macd_h;
+
+		} # restart ema
+		else
+		{
+			print "calculate exponential \n";
+			
+			my $multiplier_26 = 2/(26+1);
+			my $multiplier_12 = 2/(12+1);
+			my $multiplier_9 = 2/(9+1);			
+			$crt_26ema = ((get_last($queue_pairs_lists[$queue_pairs_lists_size - 1]->{$ticker}) - $previous_macd_26ema) * $multiplier_26) + $previous_macd_26ema;
+			$crt_12ema = ((get_last($queue_pairs_lists[$queue_pairs_lists_size - 1]->{$ticker}) - $previous_macd_12ema) * $multiplier_12) + $previous_macd_12ema;
+			$crt_macd = ( $crt_26ema - $crt_12ema);			
+			$crt_9ema = (($crt_macd - $previous_macd_9ema) * $multiplier_9) + $previous_macd_9ema;			
+			
+			print "$func_tstmp $current_price ".sprintf("%0.15f",$crt_26ema)." ".sprintf("%0.15f",$crt_12ema)." ".sprintf("%0.15f",$crt_9ema)." ".sprintf("%0.15f",$crt_macd)." ".sprintf("%0.15f",$crt_macd_cross)." ".sprintf("%0.15f",$crt_macd_cross_direction)." ".sprintf("%0.15f",$crt_macd_zero)." \n";
+			open(my $filename_macd_h, '>>', $compose_file) or warn "Could not open file $compose_file $!";
+			print $filename_macd_h "$func_tstmp $current_price ".sprintf("%0.15f",$crt_26ema)." ".sprintf("%0.15f",$crt_12ema)." ".sprintf("%0.15f",$crt_9ema)." ".sprintf("%0.15f",$crt_macd)." ".sprintf("%0.15f",$crt_macd_cross)." ".sprintf("%0.15f",$crt_macd_cross_direction)." ".sprintf("%0.15f",$crt_macd_zero)." \n";
+			close $filename_macd_h;
+			
 		}
 		
+		next;
 		#macd end
 		
-		for (my $i = 0; $i < ($queue_pairs_lists_size - 1) ; $i++)
-		{	
-			 if ( get_last($queue_pairs_lists[ $i ]->{$ticker}) < get_last($queue_pairs_lists[ $i+1 ]->{$ticker}))
-			 {
-			  # print "$_ ".get_last($queue_pairs_lists[ $i ]->{$ticker})." < ".get_last($queue_pairs_lists[ $i+1 ]->{$ticker})." \n";
-				#this is not a good ticker
-				$isTickerGood = 1;
-				last;
-			 }
-		}		
-		if ( $isTickerGood == 1 )
-		{
-			# thicker is not good
-			next;
-		}
+		# for (my $i = 0; $i < ($queue_pairs_lists_size - 1) ; $i++)
+		# {	
+			 # if ( get_last($queue_pairs_lists[ $i ]->{$ticker}) < get_last($queue_pairs_lists[ $i+1 ]->{$ticker}))
+			 # {
+			  # # print "$_ ".get_last($queue_pairs_lists[ $i ]->{$ticker})." < ".get_last($queue_pairs_lists[ $i+1 ]->{$ticker})." \n";
+				# #this is not a good ticker
+				# $isTickerGood = 1;
+				# last;
+			 # }
+		# }		
+		# if ( $isTickerGood == 1 )
+		# {
+			# # thicker is not good
+			# next;
+		# }
 		
-		my $first = get_last($queue_pairs_lists[ 0 ]->{$ticker});
-		my $last  = get_last($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$ticker});
+		# my $first = get_last($queue_pairs_lists[ 0 ]->{$ticker});
+		# my $last  = get_last($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$ticker});
 		
-		my $low24hr = get_low24hr($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$ticker});
-		my $high24hr = get_high24hr($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$ticker});		
+		# my $low24hr = get_low24hr($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$ticker});
+		# my $high24hr = get_high24hr($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$ticker});		
 		
-		# only pairs at which the current price is between (lowest24h + 2.5%) and (highest24 - 2.5%) 
-		if  ( ( $last >= ($low24hr + ($low24hr * ($wining_procent_divided + 0.02) ) ) ) && ( $last <= ($high24hr - ($high24hr * ($wining_procent_divided + 0.02) ) ) ) )  
-		{
-			# print "$ticker ";
-			if  ( $first >= $last  )
-			{
-				my $delta = $first - $last;
-				my $procent = (100 * $delta) / $first;
-				if ( $highest_negative_delta < $procent )
-				{
-					$highest_negative_delta  = $procent;
-					$decline_ticker = $ticker;
-				}
-				# print "DOWN  $procent  $first $last";
-			}
-			else
-			{
-				my $delta = $last - $first;
-				my $procent = (100 * $delta) / $first;
-				# print "UP $procent $first $last";
-			}		
-		}		
+		# # only pairs at which the current price is between (lowest24h + 2.5%) and (highest24 - 2.5%) 
+		# if  ( ( $last >= ($low24hr + ($low24hr * ($wining_procent_divided + 0.02) ) ) ) && ( $last <= ($high24hr - ($high24hr * ($wining_procent_divided + 0.02) ) ) ) )  
+		# {
+			# # print "$ticker ";
+			# if  ( $first >= $last  )
+			# {
+				# my $delta = $first - $last;
+				# my $procent = (100 * $delta) / $first;
+				# if ( $highest_negative_delta < $procent )
+				# {
+					# $highest_negative_delta  = $procent;
+					# $decline_ticker = $ticker;
+				# }
+				# # print "DOWN  $procent  $first $last";
+			# }
+			# else
+			# {
+				# my $delta = $last - $first;
+				# my $procent = (100 * $delta) / $first;
+				# # print "UP $procent $first $last";
+			# }		
+		# }		
 		
 		
 
