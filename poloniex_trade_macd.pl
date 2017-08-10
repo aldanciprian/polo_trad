@@ -61,7 +61,7 @@ my $sleep_interval = 10; # sleep interval in seconds , the default
 my $step_wait_execute = 10; # number of seconds to wait until verify if the order is executed
 my $step_wait_selling = 10;
 my $step_wait_sell_execute = 30;
-my $step_sampling = 3; # number of seconds between samples when deciding to buy
+my $step_sampling = 150; # number of seconds between samples when deciding to buy
 
 
 my $loosingProcent = 20; #the loss limit
@@ -677,7 +677,7 @@ sub get_next_buy_ticker
 		my $previousTime = Time::Piece->strptime($previous_tstmp,'%Y-%m-%d_%H-%M-%S');
 		my $lastTime = Time::Piece->strptime($last_tstmp,'%Y-%m-%d_%H-%M-%S');
 		
-		my $temp_threshold = ($step_sampling  * $queue_pairs_lists_size ) + 20;
+		my $temp_threshold = ($step_sampling  * $queue_pairs_lists_size ) + 30;
 		if ( ($lastTime - $firstTime) > $temp_threshold )
 		{
 			print "the time distance between the first and last sample is to high ".($lastTime - $firstTime)."  $temp_threshold \n";
@@ -691,6 +691,8 @@ sub get_next_buy_ticker
 		}
 
 		#macd
+		my $previous_macd_crt = 1;
+		my $previous_macd_price =	get_last($queue_pairs_lists[$queue_pairs_lists_size - 1]->{$ticker});	
 		my $previous_macd_tstmp = 0;
 		my $previous_macd_26ema = 0;
 		my $previous_macd_12ema = 0;
@@ -719,20 +721,21 @@ sub get_next_buy_ticker
 			# print "$compose_file is not empty \n";
 			# tstmp 26ema 12ema 9ema macd macdcross macdcroos_direction macd_zero
 			# print "[$last_line_macd]\n";
-			if ( $last_line_macd =~ /(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+/ )
+			if ( $last_line_macd =~ /(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+/ )
 			{
-				my $previous_macd_price = $2;
-				my $previous_macd_tstmp = $1;
-				my $previous_macd_26ema = $3;
-				my $previous_macd_12ema = $4;
-				my $previous_macd_9ema = $5;
-				my $previous_macd = $6;
-				my $previous_macd_cross = $7;
-				my $previous_macd_cross_direction = $8;
-				my $previous_macd_zero = $9;
+				$previous_macd_crt = $1;			
+				$previous_macd_price = $3;
+				$previous_macd_tstmp = $2;
+				$previous_macd_26ema = $4;
+				$previous_macd_12ema = $5;
+				$previous_macd_9ema = $6;
+				$previous_macd = $7;
+				$previous_macd_cross = $8;
+				$previous_macd_cross_direction = $9;
+				$previous_macd_zero = $10;
 				
 				my $previousMacdTime = Time::Piece->strptime($previous_macd_tstmp,'%Y-%m-%d_%H-%M-%S');
-				print "$func_tstmp  $previous_macd_tstmp ".($funcTime - $previousMacdTime)."\n";
+				# print "READ last $previous_macd_crt $previous_macd $previous_macd_26ema $previous_macd_12ema $func_tstmp  $previous_macd_tstmp ".($funcTime - $previousMacdTime)."\n";
 				
 				if ( ($funcTime - $previousMacdTime) > (($step_sampling  * 26 ) + 20) )
 				{
@@ -742,8 +745,7 @@ sub get_next_buy_ticker
 			}
 		}
 
-	
-
+		my $crt_crt = 1;
 		my $crt_26ema =  0;
 		my $crt_12ema =  0;
 		my $crt_9ema =  0;
@@ -755,12 +757,12 @@ sub get_next_buy_ticker
 		my $current_price = get_last($queue_pairs_lists[$queue_pairs_lists_size - 1]->{$ticker});
 		if ( $restart_ema == 1 )
 		{
-			print "restart ema calculus \n";
+			# print "restart ema calculus \n";
 			# print Dumper \%{$queue_pairs_lists[0]};
 		
 			foreach (my $i = 0 ; $i < 26 ; $i++)
 			{
-				print get_tstmp($queue_pairs_lists[($queue_pairs_lists_size - $i) - 1]->{$ticker})."  ".get_last($queue_pairs_lists[($queue_pairs_lists_size - $i) - 1]->{$ticker})." \n";
+				# print get_tstmp($queue_pairs_lists[($queue_pairs_lists_size - $i) - 1]->{$ticker})."  ".get_last($queue_pairs_lists[($queue_pairs_lists_size - $i) - 1]->{$ticker})." \n";
 				$crt_26ema += get_last($queue_pairs_lists[($queue_pairs_lists_size - $i) - 1]->{$ticker});
 			}
 			$crt_26ema = $crt_26ema / 26;
@@ -768,36 +770,39 @@ sub get_next_buy_ticker
 			
 			foreach (my $i = 0 ; $i < 12 ; $i++)
 			{
-				print get_tstmp($queue_pairs_lists[($queue_pairs_lists_size - $i) - 1]->{$ticker})."  ".get_last($queue_pairs_lists[($queue_pairs_lists_size - $i) - 1]->{$ticker})." \n";
+				# print get_tstmp($queue_pairs_lists[($queue_pairs_lists_size - $i) - 1]->{$ticker})."  ".get_last($queue_pairs_lists[($queue_pairs_lists_size - $i) - 1]->{$ticker})." \n";
 				$crt_12ema += get_last($queue_pairs_lists[($queue_pairs_lists_size - $i) - 1]->{$ticker});
 			}
 			$crt_12ema = $crt_12ema / 12;
 
 
 
-			$crt_9ema = $crt_26ema - $crt_12ema;
+			# $crt_9ema = $crt_26ema - $crt_12ema;
 
-			print "$func_tstmp $current_price ".sprintf("%0.15f",$crt_26ema)." ".sprintf("%0.15f",$crt_12ema)." ".sprintf("%0.15f",$crt_9ema)." ".sprintf("%0.15f",$crt_macd)." ".sprintf("%0.15f",$crt_macd_cross)." ".sprintf("%0.15f",$crt_macd_cross_direction)." ".sprintf("%0.15f",$crt_macd_zero)." \n";		
+			# print "$crt_crt $func_tstmp $current_price ".sprintf("%0.08f",$crt_26ema)." ".sprintf("%0.08f",$crt_12ema)." ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$crt_macd_cross)." ".sprintf("%0.08f",$crt_macd_cross_direction)." ".sprintf("%0.08f",$crt_macd_zero)." \n";		
 			open(my $filename_macd_h, '>>', $compose_file) or warn "Could not open file $compose_file $!";
-			print $filename_macd_h "$func_tstmp $current_price ".sprintf("%0.15f",$crt_26ema)." ".sprintf("%0.15f",$crt_12ema)." ".sprintf("%0.15f",$crt_9ema)." ".sprintf("%0.15f",$crt_macd)." ".sprintf("%0.15f",$crt_macd_cross)." ".sprintf("%0.15f",$crt_macd_cross_direction)." ".sprintf("%0.15f",$crt_macd_zero)." \n";
+			print $filename_macd_h "$crt_crt $func_tstmp $current_price ".sprintf("%0.08f",$crt_26ema)." ".sprintf("%0.08f",$crt_12ema)." ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$crt_macd_cross)." ".sprintf("%0.08f",$crt_macd_cross_direction)." ".sprintf("%0.08f",$crt_macd_zero)." \n";
 			close $filename_macd_h;
 
 		} # restart ema
 		else
 		{
-			print "calculate exponential \n";
+			# print "calculate exponential \n";
 			
 			my $multiplier_26 = 2/(26+1);
 			my $multiplier_12 = 2/(12+1);
 			my $multiplier_9 = 2/(9+1);			
 			$crt_26ema = ((get_last($queue_pairs_lists[$queue_pairs_lists_size - 1]->{$ticker}) - $previous_macd_26ema) * $multiplier_26) + $previous_macd_26ema;
 			$crt_12ema = ((get_last($queue_pairs_lists[$queue_pairs_lists_size - 1]->{$ticker}) - $previous_macd_12ema) * $multiplier_12) + $previous_macd_12ema;
-			$crt_macd = ( $crt_26ema - $crt_12ema);			
+			$crt_macd =  $crt_26ema - $crt_12ema;			
 			$crt_9ema = (($crt_macd - $previous_macd_9ema) * $multiplier_9) + $previous_macd_9ema;			
 			
-			print "$func_tstmp $current_price ".sprintf("%0.15f",$crt_26ema)." ".sprintf("%0.15f",$crt_12ema)." ".sprintf("%0.15f",$crt_9ema)." ".sprintf("%0.15f",$crt_macd)." ".sprintf("%0.15f",$crt_macd_cross)." ".sprintf("%0.15f",$crt_macd_cross_direction)." ".sprintf("%0.15f",$crt_macd_zero)." \n";
+			
+			$crt_crt = $previous_macd_crt + 1;
+			# print "WRITING last $crt_crt $previous_macd_crt\n";
+			# print "$crt_crt $func_tstmp $current_price ".sprintf("%0.08f",$crt_26ema)." ".sprintf("%0.08f",$crt_12ema)." ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$crt_macd_cross)." ".sprintf("%0.08f",$crt_macd_cross_direction)." ".sprintf("%0.08f",$crt_macd_zero)." \n";
 			open(my $filename_macd_h, '>>', $compose_file) or warn "Could not open file $compose_file $!";
-			print $filename_macd_h "$func_tstmp $current_price ".sprintf("%0.15f",$crt_26ema)." ".sprintf("%0.15f",$crt_12ema)." ".sprintf("%0.15f",$crt_9ema)." ".sprintf("%0.15f",$crt_macd)." ".sprintf("%0.15f",$crt_macd_cross)." ".sprintf("%0.15f",$crt_macd_cross_direction)." ".sprintf("%0.15f",$crt_macd_zero)." \n";
+			print $filename_macd_h "$crt_crt $func_tstmp $current_price ".sprintf("%0.08f",$crt_26ema)." ".sprintf("%0.08f",$crt_12ema)." ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$crt_macd_cross)." ".sprintf("%0.08f",$crt_macd_cross_direction)." ".sprintf("%0.08f",$crt_macd_zero)." \n";
 			close $filename_macd_h;
 			
 		}
