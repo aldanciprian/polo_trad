@@ -61,8 +61,9 @@ my $sleep_interval = 10; # sleep interval in seconds , the default
 my $step_wait_execute = 10; # number of seconds to wait until verify if the order is executed
 my $step_wait_selling = 10;
 my $step_wait_sell_execute = 30;
-my $step_sampling = 150; # number of seconds between samples when deciding to buy
-
+my $step_sampling = 10; # number of seconds between samples when deciding to buy
+my $step_sampling_ctr = 0; # counter for macd samplings
+my $step_sampling_ctr_size = (80 / $step_sampling); # counter for macd samplings
 
 my $loosingProcent = 20; #the loss limit
 my $volumeRef = 70; # only pairs with more then x coin volume
@@ -95,19 +96,21 @@ sub get_highestBid;
 sub get_isFrozen;
 
 
-my $thr_sampling;
-sub sampling_thread
-{
-	while (1)
-	{
-	my $thread_tstmp =  timestamp();
-	print "========================== From sampling thread $thread_tstmp $$=============================\n";
-	populate_queue();
-	get_next_buy_ticker($crt_pair);
-	my $sampling_interval = $step_sampling;
-	sleep $sampling_interval;
-	}
-}
+
+
+# my $thr_sampling;
+# sub sampling_thread
+# {
+	# while (1)
+	# {
+	# my $thread_tstmp =  timestamp();
+	# print "========================== From sampling thread $thread_tstmp $$=============================\n";
+	# populate_queue();
+	# get_next_buy_ticker($crt_pair);
+	# my $sampling_interval = $step_sampling;
+	# sleep $sampling_interval;
+	# }
+# }
 
 
 # get_json_post();
@@ -123,10 +126,10 @@ my $polo_wrapper = Poloniex->new($apikey,$sign);
 # print Dumper $polo_wrapper->get_open_orders("all");
 # print Dumper $polo_wrapper->get_open_orders("all");						
 
-$thr_sampling = threads->create('sampling_thread');
+# $thr_sampling = threads->create('sampling_thread');
 	
-$thr_sampling->join();
- exit 0;
+# $thr_sampling->join();
+ # exit 0;
 while (1)
 {
 							# $decoded_json = $polo_wrapper->get_my_trade_history("BTC_XBC");
@@ -136,10 +139,35 @@ while (1)
 								# print "elem $_->{'orderNumber'} \n";
 							# }
 							# exit 0;	
-
-	# get the state machine
+	
 	my $execute_crt_tstmp = timestamp();
 	print "============================= poloniex trade $execute_crt_tstmp  $$ ======================\n";		
+	
+	
+	
+	# print " $step_sampling_ctr $step_sampling_ctr_size \n";
+	if ( $step_sampling_ctr > $step_sampling_ctr_size )
+	{
+		$step_sampling_ctr = 0;
+		# do sampling		
+		my $thread_tstmp =  timestamp();
+		print "========================== From sampling thread $thread_tstmp $$=============================\n";
+		populate_queue();
+		get_next_buy_ticker($crt_pair);
+		
+	}
+	else
+	{
+		$step_sampling_ctr ++;
+	}
+	
+	sleep $sleep_interval;	
+	next;
+
+	
+	# get the state machine
+	# my $execute_crt_tstmp = timestamp();
+	# print "============================= poloniex trade $execute_crt_tstmp  $$ ======================\n";		
 	my $state = get_state_machine();
 	
 	#switch for each state
@@ -676,7 +704,7 @@ sub get_next_buy_ticker
 		my $firstTime = Time::Piece->strptime($first_tstmp,'%Y-%m-%d_%H-%M-%S');
 		my $previousTime = Time::Piece->strptime($previous_tstmp,'%Y-%m-%d_%H-%M-%S');
 		my $lastTime = Time::Piece->strptime($last_tstmp,'%Y-%m-%d_%H-%M-%S');
-		
+		print "$last_tstmp  -  $first_tstmp - $previous_tstmp\n";
 		my $temp_threshold = ($step_sampling  * $queue_pairs_lists_size ) + 30;
 		if ( ($lastTime - $firstTime) > $temp_threshold )
 		{
@@ -686,7 +714,7 @@ sub get_next_buy_ticker
 		
 		if  (  ($lastTime - $previousTime) < $step_sampling )
 		{
-			print "distance from the last to previous is to small ".($lastTime - $previousTime)."\n";
+			print "distance from the last to previous is to small ".($lastTime - $previousTime)." $step_sampling\n";
 			return $decline_ticker;
 		}
 
@@ -794,7 +822,7 @@ sub get_next_buy_ticker
 			my $multiplier_9 = 2/(9+1);			
 			$crt_26ema = ((get_last($queue_pairs_lists[$queue_pairs_lists_size - 1]->{$ticker}) - $previous_macd_26ema) * $multiplier_26) + $previous_macd_26ema;
 			$crt_12ema = ((get_last($queue_pairs_lists[$queue_pairs_lists_size - 1]->{$ticker}) - $previous_macd_12ema) * $multiplier_12) + $previous_macd_12ema;
-			$crt_macd =  $crt_26ema - $crt_12ema;			
+			$crt_macd =  $crt_12ema - $crt_26ema;			
 			$crt_9ema = (($crt_macd - $previous_macd_9ema) * $multiplier_9) + $previous_macd_9ema;			
 			
 			
