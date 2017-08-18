@@ -36,9 +36,9 @@ my $current_spike = 0; # the current number of buy/sell
 my $btc_balance = 0.001; # the ammount in BTC
 my @queue_pairs_lists; # list with all samplings
 my $queue_pairs_lists_size = 30; # size of the list with all samplings
-my $wining_procent = 1.35; # the procent where we sell
+my $wining_procent = 1.1; # the procent where we sell
 my $wining_procent_divided = $wining_procent / 100; # the procent where we sell
-my $down_delta_procent_threshold =  0.35; # the procent from max win down
+my $down_delta_procent_threshold =  0.23; # the procent from max win down
 my $basename = basename($0,".pl");;
 
 
@@ -63,7 +63,7 @@ my $step_wait_selling = 10;
 my $step_wait_sell_execute = 30;
 my $step_sampling = 10; # number of seconds between samples when deciding to buy
 my $step_sampling_ctr = 0; # counter for macd samplings
-my $step_sampling_ctr_size = (80 / $step_sampling); # counter for macd samplings
+my $step_sampling_ctr_size = (240 / $step_sampling); # counter for macd samplings
 
 my $loosingProcent = 20; #the loss limit
 my $volumeRef = 70; # only pairs with more then x coin volume
@@ -143,17 +143,28 @@ while (1)
 	my $execute_crt_tstmp = timestamp();
 	print "============================= poloniex trade $execute_crt_tstmp  $$ ======================\n";		
 	
+	# watchdog
+	my $filename_wdg = 'wdg_macd.txt';
+	open(my $fh_wdg, '>>', $filename_wdg) or die "Could not open file '$filename_wdg' $!";
+	print $fh_wdg "$execute_crt_tstmp\n";
+	close $fh_wdg;	
+	
+	my $buy_next = "WRONG";
 	
 	
 	# print " $step_sampling_ctr $step_sampling_ctr_size \n";
-	if ( $step_sampling_ctr > $step_sampling_ctr_size )
+	if ( $step_sampling_ctr >= ($step_sampling_ctr_size - 1) ) 
 	{
 		$step_sampling_ctr = 0;
 		# do sampling		
 		my $thread_tstmp =  timestamp();
 		print "========================== From sampling thread $thread_tstmp $$=============================\n";
+		print " =========  populate queue ".timestamp()." \n";		
 		populate_queue();
-		get_next_buy_ticker($crt_pair);
+		print " =========  end populate queue ".timestamp()." \n";				
+		print " =========  get next buy ticker ".timestamp()." \n";
+		$buy_next = get_next_buy_ticker($crt_pair);
+		print " =========  end get next buy ticker ".timestamp()." \n";		
 		
 	}
 	else
@@ -161,8 +172,8 @@ while (1)
 		$step_sampling_ctr ++;
 	}
 	
-	sleep $sleep_interval;	
-	next;
+	# sleep $sleep_interval;	
+	# next;
 
 	
 	# get the state machine
@@ -248,11 +259,10 @@ while (1)
 					{
 						# there is no order
 						# print "there is no order \n";
-						my $buy_ticker = get_next_buy_ticker($crt_pair);
+						my $buy_ticker = $buy_next;
 						if ( $buy_ticker ne "WRONG" )
 						{
 							print "buy now \n";
-							exit 0;
 							# buy now
 							# write status file - last line
 							my $price = get_last($queue_pairs_lists[ $queue_pairs_lists_size - 1]->{$buy_ticker});
@@ -465,7 +475,6 @@ while (1)
 			}
 	case 4 { 
 					print "SOLD \n"; 
-					exit 0;
 					print "$current_spike $crt_tstmp BUYING $crt_pair 0 0 0 $btc_balance \n";
 					open(my $filename_status_h, '>>', $filename_status) or warn "Could not open file '$filename_status' $!";
 					print $filename_status_h "$current_spike $crt_tstmp BUYING $crt_pair 0 0 0 $btc_balance \n";
@@ -673,16 +682,17 @@ sub get_pair_list {
 sub get_next_buy_ticker
 {
 	my $func_tstmp = timestamp();
+
 	my $funcTime = Time::Piece->strptime($func_tstmp,'%Y-%m-%d_%H-%M-%S');
 	my $previous_ticker = shift;
 	$previous_ticker = "BTC_$previous_ticker";
 	my $highest_negative_delta = 0;
-	my $decline_ticker = "WRONG";
+	my $buy_next_ticker = "WRONG";
 
 	if ( $#queue_pairs_lists < ($queue_pairs_lists_size - 1) )
 	{
 		print "we don't have a full sample list yet !\n";
-		return $decline_ticker;
+		return $buy_next_ticker;
 	}
 	
 	# print Dumper @queue_pairs_lists;
@@ -705,17 +715,17 @@ sub get_next_buy_ticker
 		my $previousTime = Time::Piece->strptime($previous_tstmp,'%Y-%m-%d_%H-%M-%S');
 		my $lastTime = Time::Piece->strptime($last_tstmp,'%Y-%m-%d_%H-%M-%S');
 		print "$last_tstmp  -  $first_tstmp - $previous_tstmp\n";
-		my $temp_threshold = ($step_sampling  * $queue_pairs_lists_size ) + 30;
+		my $temp_threshold = ($step_sampling_ctr_size* $step_sampling * $queue_pairs_lists_size ) + 200;
 		if ( ($lastTime - $firstTime) > $temp_threshold )
 		{
 			print "the time distance between the first and last sample is to high ".($lastTime - $firstTime)."  $temp_threshold \n";
-			return $decline_ticker;
+			return $buy_next_ticker;
 		}
 		
-		if  (  ($lastTime - $previousTime) < $step_sampling )
+		if  (  ($lastTime - $previousTime) < ($step_sampling_ctr_size / $step_sampling) )
 		{
 			print "distance from the last to previous is to small ".($lastTime - $previousTime)." $step_sampling\n";
-			return $decline_ticker;
+			return $buy_next_ticker;
 		}
 
 		#macd
@@ -835,7 +845,22 @@ sub get_next_buy_ticker
 			
 		}
 		
-		next;
+		print "$ticker $crt_crt $current_price ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$previous_macd_9ema)." ".sprintf("%0.08f",$previous_macd)." \n";
+		# buy only if we have enough samples the make a decision
+		if ( $crt_crt > 26 )
+		{
+			if ( $previous_macd < $previous_macd_9ema )
+			{
+				if ( $crt_macd > $crt_9ema )
+				{
+					# we have a cros from low to high of macd
+					#we should buy now
+					$buy_next_ticker = $ticker;
+				}
+			}
+		}
+		
+		# next;
 		#macd end
 		
 		# for (my $i = 0; $i < ($queue_pairs_lists_size - 1) ; $i++)
@@ -871,7 +896,7 @@ sub get_next_buy_ticker
 				# if ( $highest_negative_delta < $procent )
 				# {
 					# $highest_negative_delta  = $procent;
-					# $decline_ticker = $ticker;
+					# $buy_next_ticker = $ticker;
 				# }
 				# # print "DOWN  $procent  $first $last";
 			# }
@@ -891,16 +916,16 @@ sub get_next_buy_ticker
 		# }
 		# print "\n";
 		# print "tstmp 0  and 1 is for $_  ".get_tstmp(@queue_pairs_lists[ 0 ]->{$_})."  ".get_tstmp(@queue_pairs_lists[ 1 ]->{$_})."  ".get_tstmp(@queue_pairs_lists[ 2 ]->{$_})."  ".get_tstmp(@queue_pairs_lists[ 3 ]->{$_})." \n";
-	}
-	if ( $decline_ticker eq "WRONG" )
+	} # end of foreach
+	if ( $buy_next_ticker eq "WRONG" )
 	{
-		print "There is no good ticker $decline_ticker!\n";
+		print "There is no good ticker $buy_next_ticker!\n";
 	}
 	else
 	{
-		print "the most declining ticker is $decline_ticker $highest_negative_delta ".get_last($queue_pairs_lists[ 0 ]->{$decline_ticker})." ".get_last($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$decline_ticker})." ".get_tstmp($queue_pairs_lists[ 0 ]->{$decline_ticker})." ".get_tstmp($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$decline_ticker})."\n";	
+		print "the next to buy  ticker is $buy_next_ticker $highest_negative_delta ".get_last($queue_pairs_lists[ 0 ]->{$buy_next_ticker})." ".get_last($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$buy_next_ticker})." ".get_tstmp($queue_pairs_lists[ 0 ]->{$buy_next_ticker})." ".get_tstmp($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$buy_next_ticker})."\n";	
 	}
-	return $decline_ticker;
+	return $buy_next_ticker;
 	# foreach (@queue_pairs_lists)
 	# {
 		# my $hash = $_;
