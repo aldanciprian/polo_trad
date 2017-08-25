@@ -27,7 +27,7 @@ do
 	echo "============GENESIS polo trad $$============"
 	date
 	cd $BASE/
-	./manage_trade.sh
+	./manage_trade_macd.sh
 
 	sleep 10s
 done

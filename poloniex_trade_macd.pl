@@ -40,7 +40,8 @@ my $wining_procent = 1.1; # the procent where we sell
 my $wining_procent_divided = $wining_procent / 100; # the procent where we sell
 my $down_delta_procent_threshold =  0.23; # the procent from max win down
 my $basename = basename($0,".pl");;
-
+my $max_distance =  (20*60)+10; # maximum distance between 2 samples in seconds
+my $min_distance =  (19*60); # minimum distance between 2 samples in seconds
 
 
 my $filename_status= $basename."_status.ctrl";
@@ -72,6 +73,7 @@ my $loosingProcent = 20; #the loss limit
 my $volumeRef = 70; # only pairs with more then x coin volume
 
 my $buy_timeout = 0; #if it doesn't buy...cancel the order
+my $runOnce = 0;
 # BUYING 1
 # BOUGHT 2
 # SELLING 3
@@ -160,32 +162,43 @@ while (1)
 	my $crtTime =   Time::Piece->strptime($execute_crt_tstmp,'%Y-%m-%d_%H-%M-%S');	
 	my $minute = 0;
 	my $reminder = 0;
+	my $endMinute	= 0;
+	my $endTfTime = 0;
 	{
 	  use integer;
 	  $minute = $crtTime->strftime("%M");
-	  $reminder = $minute % 5;
-	  $reminder = 5 - $reminder;
+	  $reminder = $minute % 20;
+	  $reminder = 20 - $reminder;
 	  $minute += $reminder;
 	  if ( $minute == 60 )
 	  {
 		$minute = 59;
+		$endMinute = sprintf("%02s",$minute);
+		$endTfTime = $crtTime->strftime("%Y-%m-%d_%H-$endMinute-59");
 	  }
+		else
+		{
+		$endMinute = sprintf("%02s",$minute);
+		$endTfTime = $crtTime->strftime("%Y-%m-%d_%H-$endMinute-00");
+		}
 	}
-	my $endMinute = sprintf("%02s",$minute);
-	my $endTfTime = $crtTime->strftime("%Y-%m-%d_%H-$endMinute-00");
 	$endTfTime = Time::Piece->strptime($endTfTime,'%Y-%m-%d_%H-%M-%S');	
 	
 	print "$execute_crt_tstmp $endTfTime ".( $endTfTime - $crtTime )."\n";
-	if  (( ( $endTfTime - $crtTime ) < 13 ) && ( ($endTfTime - $crtTime) > 2 ) )
+	if  (( ( $endTfTime - $crtTime ) < 25 ) && ( $runOnce == 0 ) )
 	{
 		print "the end of the timeslot is near \n";
 		print " =========  get next buy ticker ".timestamp()." \n";
 		$buy_next = get_next_buy_ticker($crt_pair,\%current_list);
-		print " =========  end get next buy ticker ".timestamp()." \n";			
+		print " =========  end get next buy ticker ".timestamp()." \n";	
+		$runOnce = 1;
 	}
 	
-	sleep 10;
-	next;
+	if  ( ( $endTfTime - $crtTime ) > 50 )	
+	{
+		$runOnce = 0;
+	}
+
 
 	
 	# sleep $sleep_interval;	
@@ -614,7 +627,7 @@ sub get_pair_list {
 	$decoded_json=get_json("https://poloniex.com/public?command=returnTicker");
 	# print Dumper $decoded_json;
 
-	open(my $filename_samplings_all_h, '>>', $filename_samplings_all) or warn "Could not open file $filename_samplings_all $!";
+	# open(my $filename_samplings_all_h, '>>', $filename_samplings_all) or warn "Could not open file $filename_samplings_all $!";
 
 	foreach (sort (keys (%{$decoded_json})))
 	{
@@ -667,14 +680,14 @@ sub get_pair_list {
 						# push @elem $highestBid;
 						# push @elem $isFrozen;
 						$current_list{$coinName} = "$tstmp $percentChange $low24hr $last $high24hr $lowestAsk $quoteVolume $baseVolume $id $highestBid $isFrozen";
-						print $filename_samplings_all_h "$tstmp $coinName $percentChange $low24hr $last $high24hr $lowestAsk $quoteVolume $baseVolume $id $highestBid $isFrozen \n";
+						# print $filename_samplings_all_h "$tstmp $coinName $percentChange $low24hr $last $high24hr $lowestAsk $quoteVolume $baseVolume $id $highestBid $isFrozen \n";
 						# push @current_list, %elem_hash;				
 					}
 				}
 			}
 		}
 	}
-	close $filename_samplings_all_h;				
+	# close $filename_samplings_all_h;				
 				# push @current_list, @elem;	
 	return %current_list;
 }
@@ -702,7 +715,7 @@ sub get_next_buy_ticker
 		
 		my $compose_file = "macd/".$ticker."_".$filename_macd;
 		open(my $filename_macd_h, '<', $compose_file) or warn "Could not open file $compose_file $!";
-		my $last_line_macd = 0;
+		my $last_line_macd = "";
 		$last_line_macd = $_,while (<$filename_macd_h>);
 		close $filename_macd_h;
 		chomp($last_line_macd);		
@@ -715,13 +728,17 @@ sub get_next_buy_ticker
 		
 
 		#macd
-		my $previous_macd_crt = 1;
+		my $previous_macd_crt = 0;
 		my $previous_macd_price = 0;	
 		my $previous_macd_tstmp = 0;
 		my $previous_macd_26ema = 0;
 		my $previous_macd_12ema = 0;
 		my $previous_macd_9ema = 0;
 		my $previous_macd = 0;
+		my $previous_macd_5ema = 0;
+		my $previous_macd_35ema = 0;
+		my $previous_macd_5ema_signal = 0;
+		my $previous_macd_signal = 0;		
 		my $previous_macd_cross = 0;
 		my $previous_macd_cross_direction = 0;
 		my $previous_macd_zero = 0;
@@ -731,7 +748,7 @@ sub get_next_buy_ticker
 	
 		if ( $last_line_macd =~ /^$/ )
 		{
-			# print "$compose_file is empty !!\n";						
+			print "$compose_file is empty !!\n";						
 			$restart_ema = 1;
 		}
 		else
@@ -739,7 +756,7 @@ sub get_next_buy_ticker
 			# print "$compose_file is not empty \n";
 			# tstmp 26ema 12ema 9ema macd macdcross macdcroos_direction macd_zero
 			# print "[$last_line_macd]\n";
-			if ( $last_line_macd =~ /(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+/ )
+			if ( $last_line_macd =~ /(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+/ )
 			{
 				$previous_macd_crt = $1;			
 				$previous_macd_price = $3;
@@ -751,6 +768,10 @@ sub get_next_buy_ticker
 				$previous_macd_cross = $8;
 				$previous_macd_cross_direction = $9;
 				$previous_macd_zero = $10;
+				$previous_macd_5ema = $11;
+				$previous_macd_35ema = $12;
+				$previous_macd_5ema_signal = $13;
+				$previous_macd_signal = $14;					
 				
 				my $previousMacdTime = Time::Piece->strptime($previous_macd_tstmp,'%Y-%m-%d_%H-%M-%S');
 				
@@ -759,16 +780,16 @@ sub get_next_buy_ticker
 				
 				print "$last_tstmp  -  $previous_macd_tstmp \n";
 
-				# if is more then 5 minutes we need to restart the macd calculus
-				if ( ($lastTime - $previousMacdTime) > ((5*60)+ 10))
+				# if is more then 15 minutes we need to restart the macd calculus
+				if ( ($lastTime - $previousMacdTime) > $max_distance)
 				{
-					print "the time distance between the first and last sample is to high ".($lastTime - $previousMacdTime)."  ".((5*60)+ 10)." \n";
+					print "the time distance between the first and last sample is to high ".($lastTime - $previousMacdTime)."  $max_distance \n";
 					$restart_ema = 1;
 				}
 				
-				if  (  ($lastTime - $previousMacdTime) < (4*60) )
+				if  (  ($lastTime - $previousMacdTime) < $min_distance )
 				{
-					print "distance from the last to previous is to small ".($lastTime - $previousMacdTime)." ".(4*60)."\n";
+					print "distance from the last to previous is to small ".($lastTime - $previousMacdTime)." $min_distance\n";
 					$restart_ema = 1;
 				}
 				
@@ -780,9 +801,14 @@ sub get_next_buy_ticker
 		my $crt_crt = 1;
 		my $current_price = get_last($current_sample_list->{$ticker});		
 		my $crt_26ema =  $current_price;
-		my $crt_12ema =  $current_price;
+		my $crt_12ema =  0;
 		my $crt_9ema =  0;
 		my $crt_macd = 0;
+		my $crt_35ema =  $current_price;
+		my $crt_5ema =  0;
+		my $crt_5ema_signal =  0;
+		my $crt_macd_signal = 0;
+		
 		my $crt_macd_cross = 0;
 		my $crt_macd_cross_direction = 0;
 		my $crt_macd_zero = 0;
@@ -790,67 +816,124 @@ sub get_next_buy_ticker
 
 		if ( $restart_ema == 1 )
 		{
+			print "restart ema \n";
 			# print "$crt_crt $func_tstmp $current_price ".sprintf("%0.08f",$crt_26ema)." ".sprintf("%0.08f",$crt_12ema)." ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$crt_macd_cross)." ".sprintf("%0.08f",$crt_macd_cross_direction)." ".sprintf("%0.08f",$crt_macd_zero)." \n";		
 			open(my $filename_macd_h, '>', $compose_file) or warn "Could not open file $compose_file $!";
-			print $filename_macd_h "$crt_crt $func_tstmp $current_price ".sprintf("%0.08f",$crt_26ema)." ".sprintf("%0.08f",$crt_12ema)." ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$crt_macd_cross)." ".sprintf("%0.08f",$crt_macd_cross_direction)." ".sprintf("%0.08f",$crt_macd_zero)." \n";
+			print $filename_macd_h "$crt_crt $func_tstmp $current_price ".sprintf("%0.08f",$crt_26ema)." ".sprintf("%0.08f",$crt_12ema)." ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$crt_macd_cross)." ".sprintf("%0.08f",$crt_macd_cross_direction)." ".sprintf("%0.08f",$crt_macd_zero)." ".sprintf("%0.08f",$crt_5ema)." ".sprintf("%0.08f",$crt_35ema)." ".sprintf("%0.08f",$crt_5ema_signal)." ".sprintf("%0.08f",$crt_macd_signal)." \n";
 			close $filename_macd_h;
 
 		} # restart ema
 		else
 		{
+			print "calculate normal \n";
 			my $multiplier_26 = 2/(26+1);
 			my $multiplier_12 = 2/(12+1);
-			my $multiplier_9 = 2/(9+1);			
-			if ( $previous_macd_crt < 12 )
+			my $multiplier_9 = 2/(9+1);		
+
+			my $multiplier_35 = 2/(35+1);
+			my $multiplier_5 = 2/(5+1);
+
+			
+			if (( $previous_macd_crt > 13 ) && ( $previous_macd_crt < 25 ))
 			{
-				$crt_12ema = $previous_macd_12ema ;
-				$crt_12ema += $current_price;
+				$crt_12ema += $previous_macd_12ema + $current_price ;
 			}
-			if ( $previous_macd_crt == 12 )
+			if ( $previous_macd_crt == 25 )
 			{
-				$crt_12ema = $previous_macd_12ema ;			
-				$crt_12ema += $current_price;							
-				$crt_12ema = $$crt_12ema / 12;
+				$crt_12ema += $previous_macd_12ema + $current_price ;			
+				$crt_12ema = $crt_12ema / 12;
 			}
-			if ( $previous_macd_crt > 12 )
+			if ( $previous_macd_crt > 25 )
 			{
 				$crt_12ema = (($current_price - $previous_macd_12ema) * $multiplier_12) + $previous_macd_12ema;			
 			}
-			if ( $previous_macd_crt < 26 )
+			
+			if ( $previous_macd_crt < 25 )
 			{
-				$crt_26ema = $previous_macd_26ema;
-				$crt_26ema += $current_price;							
+				$crt_26ema += $previous_macd_26ema;
 			}
-			if ( $previous_macd_crt == 26 )
+			if ( $previous_macd_crt == 25 )
 			{
-				$crt_26ema = $previous_macd_26ema;			
-				$crt_26ema += $current_price;			
-				$crt_26ema = $$crt_26ema / 26;
+				$crt_26ema += $previous_macd_26ema;			
+				$crt_26ema = $crt_26ema / 26;
 			}
-			if ( $previous_macd_crt > 26 )
+			if ( $previous_macd_crt > 25 )
 			{
 				$crt_26ema = (($current_price - $previous_macd_26ema) * $multiplier_26) + $previous_macd_26ema;			
 			}
 			
 
-			if ($previous_macd_crt > 26)
+			if ($previous_macd_crt > 25)
 			{
 				$crt_macd =  $crt_12ema - $crt_26ema;
-
 			}
-			if (($previous_macd_crt > 26) && ($previous_macd_crt < 35))
+			if (($previous_macd_crt > 25) && ($previous_macd_crt < 34))
 			{
-				$crt_9ema += $crt_macd;				
+				$crt_9ema += $crt_macd + $previous_macd_9ema;				
 			}
-			if ($previous_macd_crt == 35)
+			if ($previous_macd_crt == 34)
 			{
-				$crt_9ema += $crt_macd;	
+				$crt_9ema += $crt_macd + $previous_macd_9ema;	
 				$crt_9ema = $crt_9ema / 9;
 			}
-			if ($previous_macd_crt > 35)
+			if ($previous_macd_crt > 34)
 			{
 				$crt_9ema = (($crt_macd - $previous_macd_9ema) * $multiplier_9) + $previous_macd_9ema;						
 			}
+			
+			
+			# 5 35 5
+			
+			if (( $previous_macd_crt > 30 ) && ( $previous_macd_crt < 34 ))
+			{
+				$crt_5ema += $previous_macd_5ema + $current_price ;
+			}
+			if ( $previous_macd_crt == 34 )
+			{
+				$crt_5ema += $previous_macd_5ema + $current_price ;			
+				$crt_5ema = $crt_5ema / 5;
+			}
+			if ( $previous_macd_crt > 34 )
+			{
+				$crt_5ema = (($current_price - $previous_macd_5ema) * $multiplier_5) + $previous_macd_5ema;			
+			}
+			
+			
+			if ( $previous_macd_crt < 34 )
+			{
+				$crt_35ema += $previous_macd_35ema;
+			}
+			if ( $previous_macd_crt == 34 )
+			{
+				$crt_35ema += $previous_macd_35ema;			
+				$crt_35ema = $crt_35ema / 35;
+			}
+			if ( $previous_macd_crt > 34 )
+			{
+				$crt_35ema = (($current_price - $previous_macd_35ema) * $multiplier_35) + $previous_macd_35ema;			
+			}
+			
+
+			if ($previous_macd_crt > 34)
+			{
+				$crt_macd_signal =  $crt_5ema - $crt_35ema;
+			}
+			
+			if (($previous_macd_crt > 34) && ($previous_macd_crt < 39))
+			{
+				$crt_5ema_signal += $crt_macd_signal + $previous_macd_5ema;				
+			}
+			if ($previous_macd_crt == 39)
+			{
+				$crt_5ema_signal += $crt_macd_signal + $previous_macd_5ema;	
+				$crt_5ema_signal = $crt_5ema_signal / 5;
+			}
+			if ($previous_macd_crt > 39)
+			{
+				$crt_5ema_signal = (($crt_macd_signal - $previous_macd_5ema) * $multiplier_5) + $previous_macd_5ema;						
+			}
+						
+			
 			
 
 			$crt_crt = $previous_macd_crt + 1;
@@ -858,14 +941,15 @@ sub get_next_buy_ticker
 			# print "WRITING last $crt_crt $previous_macd_crt\n";
 			# print "$crt_crt $func_tstmp $current_price ".sprintf("%0.08f",$crt_26ema)." ".sprintf("%0.08f",$crt_12ema)." ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$crt_macd_cross)." ".sprintf("%0.08f",$crt_macd_cross_direction)." ".sprintf("%0.08f",$crt_macd_zero)." \n";
 			open(my $filename_macd_h, '>>', $compose_file) or warn "Could not open file $compose_file $!";
-			print $filename_macd_h "$crt_crt $func_tstmp $current_price ".sprintf("%0.08f",$crt_26ema)." ".sprintf("%0.08f",$crt_12ema)." ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$crt_macd_cross)." ".sprintf("%0.08f",$crt_macd_cross_direction)." ".sprintf("%0.08f",$crt_macd_zero)." \n";
+			print $filename_macd_h "$crt_crt $func_tstmp $current_price ".sprintf("%0.08f",$crt_26ema)." ".sprintf("%0.08f",$crt_12ema)." ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$crt_macd_cross)." ".sprintf("%0.08f",$crt_macd_cross_direction)." ".sprintf("%0.08f",$crt_macd_zero)." ".sprintf("%0.08f",$crt_5ema)." ".sprintf("%0.08f",$crt_35ema)." ".sprintf("%0.08f",$crt_5ema_signal)." ".sprintf("%0.08f",$crt_macd_signal)." \n";
 			close $filename_macd_h;
 			
 		}
 		
-		print "$ticker $crt_crt $current_price ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$previous_macd_9ema)." ".sprintf("%0.08f",$previous_macd)." \n";
-		# buy only if we have enough samples the make a decision
-		if ( $crt_crt > 35 )
+		# print "$ticker $crt_crt $current_price ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$previous_macd_9ema)." ".sprintf("%0.08f",$previous_macd)." \n";
+		print "$ticker $crt_crt $current_price \n";
+		# buy only if we have enough samples to make a decision
+		if ( $crt_crt > 52 )
 		{
 			if ( $previous_macd < $previous_macd_9ema )
 			{
@@ -879,13 +963,16 @@ sub get_next_buy_ticker
 		}
 		
 	} # end of foreach
+	
+	# return "WRONG";
+	
 	if ( $buy_next_ticker eq "WRONG" )
 	{
 		print "There is no good ticker $buy_next_ticker!\n";
 	}
 	else
 	{
-		print "the next to buy  ticker is $buy_next_ticker ".get_last($queue_pairs_lists[ 0 ]->{$buy_next_ticker})." ".get_last($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$buy_next_ticker})." ".get_tstmp($queue_pairs_lists[ 0 ]->{$buy_next_ticker})." ".get_tstmp($queue_pairs_lists[ $queue_pairs_lists_size - 1  ]->{$buy_next_ticker})."\n";	
+		print "the next to buy  ticker is $buy_next_ticker \n";	
 	}
 	return $buy_next_ticker;
 
