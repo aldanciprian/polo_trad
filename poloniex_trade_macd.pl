@@ -1,5 +1,4 @@
 #!/usr/bin/perl 
-#!/usr/bin/perl 
 
 
 use LWP::Simple;                # From CPAN
@@ -40,8 +39,9 @@ my $wining_procent = 1.1; # the procent where we sell
 my $wining_procent_divided = $wining_procent / 100; # the procent where we sell
 my $down_delta_procent_threshold =  0.23; # the procent from max win down
 my $basename = basename($0,".pl");;
-my $max_distance =  (20*60)+10; # maximum distance between 2 samples in seconds
-my $min_distance =  (19*60); # minimum distance between 2 samples in seconds
+my $sample_minutes = 5; # number of minutes between each sample
+my $max_distance =  ($sample_minutes*60)+ 60; # maximum distance between 2 samples in seconds
+my $min_distance =  ($sample_minutes*60) - 60; # minimum distance between 2 samples in seconds
 
 
 my $filename_status= $basename."_status.ctrl";
@@ -74,6 +74,7 @@ my $volumeRef = 70; # only pairs with more then x coin volume
 
 my $buy_timeout = 0; #if it doesn't buy...cancel the order
 my $runOnce = 0;
+my $runOnce_3day = 0;
 # BUYING 1
 # BOUGHT 2
 # SELLING 3
@@ -135,9 +136,11 @@ my $polo_wrapper = Poloniex->new($apikey,$sign);
 	
 # $thr_sampling->join();
  # exit 0;
+ sub test;
 while (1)
 {
 	my $execute_crt_tstmp = timestamp();
+	# test();
 	print "============================= poloniex trade $execute_crt_tstmp  $$ ======================\n";		
 	
 	my %current_list;
@@ -167,8 +170,8 @@ while (1)
 	{
 	  use integer;
 	  $minute = $crtTime->strftime("%M");
-	  $reminder = $minute % 20;
-	  $reminder = 20 - $reminder;
+	  $reminder = $minute % $sample_minutes;
+	  $reminder = $sample_minutes - $reminder;
 	  $minute += $reminder;
 	  if ( $minute == 60 )
 	  {
@@ -729,6 +732,7 @@ sub get_next_buy_ticker
 
 		#macd
 		my $previous_macd_crt = 0;
+		my $previous_3day_crt	= 0;		
 		my $previous_macd_price = 0;	
 		my $previous_macd_tstmp = 0;
 		my $previous_macd_26ema = 0;
@@ -743,6 +747,14 @@ sub get_next_buy_ticker
 		my $previous_macd_cross_direction = 0;
 		my $previous_macd_zero = 0;
 		
+		# 3 day tren
+		my $previous_3day_12ema = 0;
+		my $previous_3day_26ema = 0;
+		my $previous_3day_9ema = 0;		
+		my $previous_3day_macd = 0;		
+		
+		
+		
 		my $restart_ema = 0;
 		
 	
@@ -756,7 +768,7 @@ sub get_next_buy_ticker
 			# print "$compose_file is not empty \n";
 			# tstmp 26ema 12ema 9ema macd macdcross macdcroos_direction macd_zero
 			# print "[$last_line_macd]\n";
-			if ( $last_line_macd =~ /(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+/ )
+			if ( $last_line_macd =~ /(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+(\S*?)\s+/ )
 			{
 				$previous_macd_crt = $1;			
 				$previous_macd_price = $3;
@@ -772,6 +784,13 @@ sub get_next_buy_ticker
 				$previous_macd_35ema = $12;
 				$previous_macd_5ema_signal = $13;
 				$previous_macd_signal = $14;					
+				
+				$previous_3day_12ema = $15;
+				$previous_3day_26ema = $16;
+				$previous_3day_9ema = $17;		
+				$previous_3day_macd = $18;						
+				$previous_3day_crt = $19;				
+				
 				
 				my $previousMacdTime = Time::Piece->strptime($previous_macd_tstmp,'%Y-%m-%d_%H-%M-%S');
 				
@@ -799,6 +818,7 @@ sub get_next_buy_ticker
 		}
 
 		my $crt_crt = 1;
+		
 		my $current_price = get_last($current_sample_list->{$ticker});		
 		my $crt_26ema =  $current_price;
 		my $crt_12ema =  0;
@@ -813,13 +833,22 @@ sub get_next_buy_ticker
 		my $crt_macd_cross_direction = 0;
 		my $crt_macd_zero = 0;
 		
+		
+
+		my $crt_3day_12ema = 0;
+		my $crt_3day_26ema = 0;
+		my $crt_3day_9ema = 0;
+		my $crt_3day_macd = 0;		
+		my $crt_3day_crt = 1;
+
+		
 
 		if ( $restart_ema == 1 )
 		{
 			print "restart ema \n";
 			# print "$crt_crt $func_tstmp $current_price ".sprintf("%0.08f",$crt_26ema)." ".sprintf("%0.08f",$crt_12ema)." ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$crt_macd_cross)." ".sprintf("%0.08f",$crt_macd_cross_direction)." ".sprintf("%0.08f",$crt_macd_zero)." \n";		
 			open(my $filename_macd_h, '>', $compose_file) or warn "Could not open file $compose_file $!";
-			print $filename_macd_h "$crt_crt $func_tstmp $current_price ".sprintf("%0.08f",$crt_26ema)." ".sprintf("%0.08f",$crt_12ema)." ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$crt_macd_cross)." ".sprintf("%0.08f",$crt_macd_cross_direction)." ".sprintf("%0.08f",$crt_macd_zero)." ".sprintf("%0.08f",$crt_5ema)." ".sprintf("%0.08f",$crt_35ema)." ".sprintf("%0.08f",$crt_5ema_signal)." ".sprintf("%0.08f",$crt_macd_signal)." \n";
+			print $filename_macd_h "$crt_crt $func_tstmp $current_price ".sprintf("%0.08f",$crt_26ema)." ".sprintf("%0.08f",$crt_12ema)." ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$crt_macd_cross)." ".sprintf("%0.08f",$crt_macd_cross_direction)." ".sprintf("%0.08f",$crt_macd_zero)." ".sprintf("%0.08f",$crt_5ema)." ".sprintf("%0.08f",$crt_35ema)." ".sprintf("%0.08f",$crt_5ema_signal)." ".sprintf("%0.08f",$crt_macd_signal)." ".sprintf("%0.08f",$crt_3day_12ema)." ".sprintf("%0.08f",$crt_3day_26ema)." ".sprintf("%0.08f",$crt_3day_9ema)." ".sprintf("%0.08f",$crt_3day_macd)." ".sprintf("%0.08f",$crt_3day_crt)." \n";
 			close $filename_macd_h;
 
 		} # restart ema
@@ -884,7 +913,7 @@ sub get_next_buy_ticker
 			
 			# 5 35 5
 			
-			if (( $previous_macd_crt > 30 ) && ( $previous_macd_crt < 34 ))
+			if (( $previous_macd_crt > 29 ) && ( $previous_macd_crt < 34 ))
 			{
 				$crt_5ema += $previous_macd_5ema + $current_price ;
 			}
@@ -921,33 +950,156 @@ sub get_next_buy_ticker
 			
 			if (($previous_macd_crt > 34) && ($previous_macd_crt < 39))
 			{
-				$crt_5ema_signal += $crt_macd_signal + $previous_macd_5ema;				
+				$crt_5ema_signal += $crt_macd_signal + $previous_macd_5ema_signal;				
 			}
 			if ($previous_macd_crt == 39)
 			{
-				$crt_5ema_signal += $crt_macd_signal + $previous_macd_5ema;	
+				$crt_5ema_signal += $crt_macd_signal + $previous_macd_5ema_signal;	
 				$crt_5ema_signal = $crt_5ema_signal / 5;
 			}
 			if ($previous_macd_crt > 39)
 			{
-				$crt_5ema_signal = (($crt_macd_signal - $previous_macd_5ema) * $multiplier_5) + $previous_macd_5ema;						
+				$crt_5ema_signal = (($crt_macd_signal - $previous_macd_5ema_signal) * $multiplier_5) + $previous_macd_5ema_signal;						
 			}
 						
-			
-			
-
 			$crt_crt = $previous_macd_crt + 1;
+			
+			
+			
+			# make the 3 days trend detection
+			# one sample every 3 hours
+			#alina timeDiff
+			my $now =  timestamp();
+			my $crtTime =   Time::Piece->strptime($now,'%Y-%m-%d_%H-%M-%S');	
+			my $hour = 0;
+			my $reminder = 0;
+			my $endhour	= 0;
+			my $endTfTime = 0;
+			{
+				use integer;
+				$hour = $crtTime->strftime("%H");
+				$reminder = $hour % (3);
+				$reminder = (3) - $reminder;
+				$hour += $reminder;
+				if ( $hour == 24 )
+				{
+				$hour = 23;
+				$endhour = sprintf("%02s",$hour);
+				$endTfTime = $crtTime->strftime("%Y-%m-%d_$hour-59-59");
+				}
+				else
+				{
+				$endhour = sprintf("%02s",$hour);
+				$endTfTime = $crtTime->strftime("%Y-%m-%d_$hour-00-00");
+				}
+			}
+			$endTfTime = Time::Piece->strptime($endTfTime,'%Y-%m-%d_%H-%M-%S');	
+			
+			print "3 day trend $now $endTfTime ".( $endTfTime - $crtTime )."\n";
+			if  (( ( $endTfTime - $crtTime ) < 90 ) && ( $runOnce_3day == 0 ) )
+			{
+				print "the end of the timeslot is near \n";
+				print " =========  3day trend ".timestamp()." \n";
+
+				print "calculate normal \n";
+				my $multiplier_26 = 2/(26+1);
+				my $multiplier_12 = 2/(12+1);
+				my $multiplier_9 = 2/(9+1);		
+
+				my $multiplier_35 = 2/(35+1);
+				my $multiplier_5 = 2/(5+1);
+
+				
+				if (( $previous_3day_crt > 13 ) && ( $previous_3day_crt < 25 ))
+				{
+					$crt_3day_12ema += $previous_3day_12ema + $current_price ;
+				}
+				if ( $previous_3day_crt == 25 )
+				{
+					$crt_3day_12ema += $previous_3day_12ema + $current_price ;			
+					$crt_3day_12ema = $crt_3day_12ema / 12;
+				}
+				if ( $previous_3day_crt > 25 )
+				{
+					$crt_3day_12ema = (($current_price - $previous_3day_12ema) * $multiplier_12) + $previous_3day_12ema;			
+				}
+				
+				if ( $previous_3day_crt < 25 )
+				{
+					$crt_3day_26ema += $previous_3day_26ema;
+				}
+				if ( $previous_3day_crt == 25 )
+				{
+					$crt_3day_26ema += $previous_3day_26ema;			
+					$crt_3day_26ema = $crt_3day_26ema / 26;
+				}
+				if ( $previous_3day_crt > 25 )
+				{
+					$crt_3day_26ema = (($current_price - $previous_3day_26ema) * $multiplier_26) + $previous_3day_26ema;			
+				}
+				
+
+				if ($previous_3day_crt > 25)
+				{
+					$crt_3day_macd =  $crt_3day_12ema - $crt_3day_26ema;
+				}
+				if (($previous_3day_crt > 25) && ($previous_3day_crt < 34))
+				{
+					$crt_3day_9ema += $crt_3day_macd + $previous_3day_9ema;				
+				}
+				if ($previous_3day_crt == 34)
+				{
+					$crt_3day_9ema += $crt_3day_macd + $previous_3day_9ema;	
+					$crt_3day_9ema = $crt_3day_9ema / 9;
+				}
+				if ($previous_3day_crt > 34)
+				{
+					$crt_3day_9ema = (($crt_3day_macd - $previous_3day_9ema) * $multiplier_9) + $previous_3day_9ema;						
+				}			
+				
+				$crt_3day_crt = $previous_3day_crt + 1;			
+				
+				print " =========  end 3day trend ".timestamp()." \n";	
+				$runOnce_3day = 1;
+			}
+			else
+			{
+				$crt_3day_12ema	=	$previous_3day_12ema;
+				$crt_3day_26ema	=	$previous_3day_26ema;
+				$crt_3day_9ema = $previous_3day_9ema;
+				$crt_3day_macd = $previous_3day_macd;				
+				$crt_3day_crt = $previous_3day_crt;					
+			}
+			
+			if  ( ( $endTfTime - $crtTime ) > 50 )	
+			{
+				$runOnce_3day = 0;
+			}
+			#########################################			
+				
+				
+			
+			
+			
+			
 			
 			# print "WRITING last $crt_crt $previous_macd_crt\n";
 			# print "$crt_crt $func_tstmp $current_price ".sprintf("%0.08f",$crt_26ema)." ".sprintf("%0.08f",$crt_12ema)." ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$crt_macd_cross)." ".sprintf("%0.08f",$crt_macd_cross_direction)." ".sprintf("%0.08f",$crt_macd_zero)." \n";
 			open(my $filename_macd_h, '>>', $compose_file) or warn "Could not open file $compose_file $!";
-			print $filename_macd_h "$crt_crt $func_tstmp $current_price ".sprintf("%0.08f",$crt_26ema)." ".sprintf("%0.08f",$crt_12ema)." ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$crt_macd_cross)." ".sprintf("%0.08f",$crt_macd_cross_direction)." ".sprintf("%0.08f",$crt_macd_zero)." ".sprintf("%0.08f",$crt_5ema)." ".sprintf("%0.08f",$crt_35ema)." ".sprintf("%0.08f",$crt_5ema_signal)." ".sprintf("%0.08f",$crt_macd_signal)." \n";
+			print $filename_macd_h "$crt_crt $func_tstmp $current_price ".sprintf("%0.08f",$crt_26ema)." ".sprintf("%0.08f",$crt_12ema)." ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$crt_macd_cross)." ".sprintf("%0.08f",$crt_macd_cross_direction)." ".sprintf("%0.08f",$crt_macd_zero)." ".sprintf("%0.08f",$crt_5ema)." ".sprintf("%0.08f",$crt_35ema)." ".sprintf("%0.08f",$crt_5ema_signal)." ".sprintf("%0.08f",$crt_macd_signal)." ".sprintf("%0.08f",$crt_3day_12ema)." ".sprintf("%0.08f",$crt_3day_26ema)." ".sprintf("%0.08f",$crt_3day_9ema)." ".sprintf("%0.08f",$crt_3day_macd)." ".sprintf("%0.08f",$crt_3day_crt)." \n";
 			close $filename_macd_h;
 			
 		}
 		
 		# print "$ticker $crt_crt $current_price ".sprintf("%0.08f",$crt_9ema)." ".sprintf("%0.08f",$crt_macd)." ".sprintf("%0.08f",$previous_macd_9ema)." ".sprintf("%0.08f",$previous_macd)." \n";
 		print "$ticker $crt_crt $current_price \n";
+		
+		
+
+		
+		
+		
+		
 		# buy only if we have enough samples to make a decision
 		if ( $crt_crt > 52 )
 		{
@@ -961,6 +1113,12 @@ sub get_next_buy_ticker
 				}
 			}
 		}
+		
+		
+		
+		
+		
+		
 		
 	} # end of foreach
 	
@@ -1160,4 +1318,42 @@ sub get_isFrozen
 	{
 		return $1;
 	}
+}
+
+
+sub test()
+{
+			# make the 3 days trend detection
+			# one sample every 3 hours
+			#alina timeDiff
+			my $now =  timestamp();
+			my $crtTime =   Time::Piece->strptime($now,'%Y-%m-%d_%H-%M-%S');	
+			my $ora = 0;
+			my $reminder = 0;
+			my $endhour	= 0;
+			my $endTfTime = 0;
+			{
+				use integer;
+				$ora = $crtTime->strftime("%H");
+				print "$ora \n";
+				$reminder = $ora % (3);
+				$reminder = (3) - $reminder;
+				$ora += $reminder;
+				if ( $ora == 24 )
+				{
+				$ora = 23;
+				$endhour = sprintf("%02s",$ora);
+				$endTfTime = $crtTime->strftime("%Y-%m-%d_$ora-59-59");
+				}
+				else
+				{
+				$endhour = sprintf("%02s",$ora);
+				$endTfTime = $crtTime->strftime("%Y-%m-%d_$ora-00-00");
+				}
+			}
+			
+			print "$endTfTime\n";
+			
+			 $endTfTime = Time::Piece->strptime($endTfTime,'%Y-%m-%d_%H-%M-%S');	
+			
 }
