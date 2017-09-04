@@ -24,10 +24,10 @@ trap ctrl_c INT
 
 while [ 1 ]
 do
-	echo "============GENESIS polo trad $0  $$============"
+	echo "============GENESIS polo trad $0 $$============"
 	date
 	cd $BASE/
-	./manage_trade_macd.sh
+	./wdg_macd.pl
 
 	sleep 10s
 done

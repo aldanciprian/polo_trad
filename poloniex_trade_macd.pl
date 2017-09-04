@@ -141,14 +141,14 @@ while (1)
 {
 	my $execute_crt_tstmp = timestamp();
 	# test();
-	print "============================= poloniex trade $execute_crt_tstmp  $$ ======================\n";		
+	print "============================= ".basename($0,".pl")." $execute_crt_tstmp  $$ ======================\n";		
 	
 	my %current_list;
 	
 	
 	# watchdog
 	my $filename_wdg = 'wdg_macd.txt';
-	open(my $fh_wdg, '>>', $filename_wdg) or die "Could not open file '$filename_wdg' $!";
+	open(my $fh_wdg, '>', $filename_wdg) or die "Could not open file '$filename_wdg' $!";
 	print $fh_wdg "$execute_crt_tstmp\n";
 	close $fh_wdg;	
 	
@@ -217,6 +217,8 @@ while (1)
 	switch ($state) {
 	case 1 { 
 					print "BUYING $crt_pair \n";
+					print "we stop this scripts now ! \n";
+					exit 0;
 					my $order_is_not_complete = 0;
 					if ( $has_pending_order == 1 )
 					{
@@ -512,6 +514,7 @@ while (1)
 					print $filename_status_h "$current_spike $crt_tstmp BUYING $crt_pair 0 0 0 $btc_balance \n";
 					close $filename_status_h;				
 					$sleep_interval = $step_sampling;
+					
 			}	
 	else { print "State is not recognised ! \n"; } 
 	}
